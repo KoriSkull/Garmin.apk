@@ -45,10 +45,34 @@ class NavigationNotificationListener : NotificationListenerService() {
     }
     
     override fun onNotificationPosted(sbn: StatusBarNotification) {
+        val packageName = sbn.packageName
+        
+        // Log EVERY notification from navigation apps to debug
+        if (packageName.contains("yandex") || packageName.contains("maps") || packageName.contains("nav")) {
+            DebugLog.i(TAG, "Notification received from: $packageName")
+        }
+        
         if (!enabled) return // Пропускаем если выключено
         
-        val packageName = sbn.packageName
-        val config = configManager.getConfigs().find { it.packageName == packageName && it.enabled }
+        // Check if Yandex notifications are disabled
+        if (packageName.startsWith("ru.yandex")) {
+            val prefs = getSharedPreferences("HudPrefs", MODE_PRIVATE)
+            val yandexEnabled = prefs.getBoolean("yandex_notifications_enabled", true)
+            if (!yandexEnabled) {
+                DebugLog.d(TAG, "Yandex notifications disabled, skipping")
+                return
+            }
+        }
+        
+        var config = configManager.getConfigs().find { it.packageName == packageName && it.enabled }
+        
+        // Fallback for Yandex if not in config
+        if (config == null && packageName.startsWith("ru.yandex")) {
+            config = AppConfigManager.DEFAULT_CONFIGS.find { it.packageName == packageName }
+            if (config != null) {
+                DebugLog.i(TAG, "Using default config for $packageName")
+            }
+        }
         
         if (config != null) {
             parseNotification(sbn, config)
@@ -107,7 +131,9 @@ class NavigationNotificationListener : NotificationListenerService() {
             val rawDist = extras.getCharSequence(distanceKey)?.toString()
             // If user mapped it, try to extract distance from it
             distance = extractDistance(rawDist)
-        } else {
+        }
+        
+        if (distance == null) {
             // Fallback: try standard fields
             distance = extractDistance(title) ?: extractDistance(text) ?: extractDistance(bigText)
         }
@@ -117,7 +143,9 @@ class NavigationNotificationListener : NotificationListenerService() {
         var instruction: String? = null
         if (instructionKey != null) {
             instruction = extras.getCharSequence(instructionKey)?.toString()
-        } else {
+        }
+        
+        if (instruction == null) {
             // Fallback
             instruction = title ?: text
         }
@@ -127,7 +155,9 @@ class NavigationNotificationListener : NotificationListenerService() {
         var eta: String? = null
         if (etaKey != null) {
             eta = extras.getCharSequence(etaKey)?.toString()
-        } else {
+        }
+        
+        if (eta == null) {
             // Fallback: usually text contains ETA if title contains instruction
             eta = text
         }
@@ -252,33 +282,63 @@ class NavigationNotificationListener : NotificationListenerService() {
     
     private fun extractBitmapFromRemoteViews(notification: android.app.Notification): android.graphics.Bitmap? {
         try {
-            // Try bigContentView first, then contentView
+            // Try bigContentView first (Yandex uses this), then contentView
             val views = notification.bigContentView ?: notification.contentView ?: return null
             
-            // Use reflection to access mBitmapCache
-            val viewsClass = views.javaClass
-            val bitmapCacheField = viewsClass.getDeclaredField("mBitmapCache")
-            bitmapCacheField.isAccessible = true
-            val bitmapCache = bitmapCacheField.get(views) ?: return null
+            DebugLog.i(TAG, "Attempting to extract bitmap from RemoteViews by applying to View")
             
-            val bitmapsField = bitmapCache.javaClass.getDeclaredField("mBitmaps")
-            bitmapsField.isAccessible = true
-            val bitmapsObject = bitmapsField.get(bitmapCache)
+            // Apply RemoteViews to actual View hierarchy
+            val context = this
+            val inflatedView = views.apply(context, null)
             
-            if (bitmapsObject is ArrayList<*>) {
-                @Suppress("UNCHECKED_CAST")
-                val bitmapList = bitmapsObject as ArrayList<android.graphics.Bitmap>
-                
-                // Usually the arrow is the first or second bitmap
-                for (bitmap in bitmapList) {
-                    if (bitmap.width > 0 && bitmap.height > 0) {
-                        Log.d(TAG, "Extracted bitmap from RemoteViews: ${bitmap.width}x${bitmap.height}")
-                        return bitmap
+            // Search for ImageView with arrow
+            val arrowBitmap = findArrowImageView(inflatedView)
+            
+            if (arrowBitmap != null) {
+                DebugLog.i(TAG, "Found arrow in ImageView: ${arrowBitmap.width}x${arrowBitmap.height}")
+                return arrowBitmap
+            }
+            
+            DebugLog.w(TAG, "Could not find arrow ImageView in notification")
+        } catch (e: Exception) {
+            DebugLog.e(TAG, "Failed to extract bitmap from RemoteViews: ${e.message}")
+            e.printStackTrace()
+        }
+        
+        return null
+    }
+    
+    private fun findArrowImageView(view: android.view.View): android.graphics.Bitmap? {
+        // If this is an ImageView, check if it contains an arrow
+        if (view is android.widget.ImageView) {
+            val drawable = view.drawable
+            if (drawable != null) {
+                val bitmap = ImageUtils.drawableToBitmap(drawable)
+                if (bitmap != null) {
+                    // Check if this looks like an arrow (square-ish, reasonable size)
+                    val width = bitmap.width
+                    val height = bitmap.height
+                    
+                    if (width > 30 && height > 30 && width < 500 && height < 500) {
+                        val aspectRatio = width.toFloat() / height.toFloat()
+                        if (aspectRatio in 0.5f..2.0f) {
+                            DebugLog.d(TAG, "Found potential arrow ImageView: ${width}x${height}")
+                            return bitmap
+                        }
                     }
                 }
             }
-        } catch (e: Exception) {
-            Log.w(TAG, "Failed to extract bitmap from RemoteViews: ${e.message}")
+        }
+        
+        // Recursively search children
+        if (view is android.view.ViewGroup) {
+            for (i in 0 until view.childCount) {
+                val child = view.getChildAt(i)
+                val result = findArrowImageView(child)
+                if (result != null) {
+                    return result
+                }
+            }
         }
         
         return null

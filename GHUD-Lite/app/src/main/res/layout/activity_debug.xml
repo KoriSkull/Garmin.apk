@@ -466,6 +466,48 @@
                 android:scrollbars="vertical" />
         </LinearLayout>
 
+        <!-- Arrow Training Section -->
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="Обучение (Train Arrow)"
+            android:textSize="18sp"
+            android:textStyle="bold"
+            android:background="#E1BEE7"
+            android:padding="8dp"
+            android:layout_marginBottom="8dp" />
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical"
+            android:background="#F5F5F5"
+            android:padding="12dp"
+            android:layout_marginBottom="16dp">
+
+            <TextView
+                android:id="@+id/trainingArrowHashDisplay"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="Текущий хеш: -"
+                android:fontFamily="monospace"
+                android:layout_marginBottom="8dp"/>
+
+            <Spinner
+                android:id="@+id/spinnerArrowTypes"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginBottom="8dp"/>
+
+            <Button
+                android:id="@+id/btnTrainArrow"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="Запомнить (Save)"
+                android:backgroundTint="#AB47BC"
+                android:textColor="#FFFFFF"/>
+        </LinearLayout>
+
         <!-- HUD Debug Section -->
         <TextView
             android:layout_width="match_parent"
@@ -556,6 +598,15 @@
                 android:textSize="12sp"
                 android:fontFamily="monospace" />
         </LinearLayout>
+
+        <Button
+            android:id="@+id/btnStartScreenCapture"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="Включить захват экрана"
+            android:backgroundTint="#C8E6C9"
+            android:textColor="#1B5E20"
+            android:layout_marginBottom="8dp" />
 
         <Button
             android:id="@+id/btnRefresh"

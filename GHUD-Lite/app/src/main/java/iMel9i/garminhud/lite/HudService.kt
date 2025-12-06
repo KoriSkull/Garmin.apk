@@ -279,11 +279,15 @@ class HudService : Service(), LocationListener {
         // 1. Direction Arrow
         val arrowType = profile.slots[HudSlot.DIRECTION_ARROW]
         if (arrowType == HudDataType.DISTANCE_TO_TURN || arrowType == HudDataType.NONE) {
-             // If configured to show turn info (or default for nav), show arrow
-             if (HudState.isNavigating && HudState.turnIcon != null) {
-                 hud.setDirection(HudState.turnIcon!!)
+             // Priority to new System
+             val icon = HudState.activeHudIcon
+             if (HudState.isNavigating && icon != null && icon != HudIcon.NONE) {
+                 hud.setDirection(icon.type, icon.angle)
+             } else if (HudState.isNavigating && HudState.turnIcon != null) {
+                 // Fallback to legacy
+                 hud.setArrow(HudState.turnIcon!!)
              } else {
-                 hud.setDirection(0) // Clear or Straight?
+                 hud.setDirection(0, 0) // Clear
              }
         }
         
@@ -318,7 +322,7 @@ class HudService : Service(), LocationListener {
         val speedKmh = HudState.currentSpeed
         val limit = HudState.speedLimit
         val speeding = HudState.isSpeeding
-        val camera = HudState.cameraDistance != null
+        val camera = HudState.cameraDistance != null || (HudState.activeHudIcon?.isCamera == true)
         
         // If the layout requests speed, we show it.
         if (showSpeed || HudState.isSpeeding) { 

@@ -1,11 +1,15 @@
 package iMel9i.garminhud.lite
 
 import android.Manifest
+import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.graphics.Color
 import android.os.Build
 import android.os.Bundle
+import android.provider.Settings
+import android.media.projection.MediaProjectionManager
+import android.content.ComponentName
 import android.widget.Button
 import android.widget.LinearLayout
 import android.widget.SeekBar
@@ -20,6 +24,7 @@ class MainActivity : AppCompatActivity() {
     
     companion object {
         private const val PERMISSION_REQUEST_CODE = 1001
+        private const val MEDIA_PROJECTION_REQUEST_CODE = 1002
     }
     
     private lateinit var statusText: TextView
@@ -36,6 +41,7 @@ class MainActivity : AppCompatActivity() {
     private lateinit var textSpeedingThresholdValue: TextView
     private lateinit var switchAutoBrightness: android.widget.Switch
     private lateinit var switchGmaps: android.widget.Switch
+    private lateinit var switchYandexNotifications: android.widget.Switch
     private lateinit var switchService: android.widget.Switch
     
     private lateinit var hud: GarminHudLite
@@ -52,6 +58,7 @@ class MainActivity : AppCompatActivity() {
         switchTime = findViewById(R.id.switchTime)
         switchSpeed = findViewById(R.id.switchSpeed)
         switchManualSpeedLimit = findViewById(R.id.switchManualSpeedLimit)
+        
         layoutSpeedLimitControl = findViewById(R.id.layoutSpeedLimitControl)
         seekBarSpeedLimit = findViewById(R.id.seekBarSpeedLimit)
         textSpeedLimitValue = findViewById(R.id.textSpeedLimitValue)
@@ -59,6 +66,7 @@ class MainActivity : AppCompatActivity() {
         textSpeedingThresholdValue = findViewById(R.id.textSpeedingThresholdValue)
         switchAutoBrightness = findViewById(R.id.switchAutoBrightness)
         switchGmaps = findViewById(R.id.switchGmaps)
+        switchYandexNotifications = findViewById(R.id.switchYandexNotifications)
         switchService = findViewById(R.id.switchService)
         
         hud = GarminHudLite(this)
@@ -143,9 +151,21 @@ class MainActivity : AppCompatActivity() {
         findViewById<Button>(R.id.btnOsmSettings).setOnClickListener {
             startActivity(Intent(this, OsmSettingsActivity::class.java))
         }
+
+        findViewById<Button>(R.id.btn_open_icon_mapping).setOnClickListener {
+            startActivity(Intent(this, IconMappingActivity::class.java))
+        }
+
+        findViewById<Button>(R.id.btn_open_gallery).setOnClickListener {
+            startActivity(Intent(this, HudGalleryActivity::class.java))
+        }
         
         findViewById<Button>(R.id.btnLayoutEditor).setOnClickListener {
             startActivity(Intent(this, LayoutEditorActivity::class.java))
+        }
+        
+        findViewById<Button>(R.id.btnStartScreenCapture).setOnClickListener {
+            startScreenCapture()
         }
         
         switchGmaps.setOnCheckedChangeListener { _, isChecked ->
@@ -166,6 +186,10 @@ class MainActivity : AppCompatActivity() {
                         .show()
                 }
             }
+            savePreferences()
+        }
+        
+        switchYandexNotifications.setOnCheckedChangeListener { _, _ ->
             savePreferences()
         }
         
@@ -236,6 +260,7 @@ class MainActivity : AppCompatActivity() {
         
         switchAutoBrightness.isChecked = prefs.getBoolean("auto_brightness", true)
         switchGmaps.isChecked = prefs.getBoolean("gmaps_integration", false)
+        switchYandexNotifications.isChecked = prefs.getBoolean("yandex_notifications_enabled", true)
         switchService.isChecked = prefs.getBoolean("service_active", false)
     }
     
@@ -249,6 +274,7 @@ class MainActivity : AppCompatActivity() {
             .putInt("speeding_threshold", seekBarSpeedingThreshold.progress)
             .putBoolean("auto_brightness", switchAutoBrightness.isChecked)
             .putBoolean("gmaps_integration", switchGmaps.isChecked)
+            .putBoolean("yandex_notifications_enabled", switchYandexNotifications.isChecked)
             .putBoolean("service_active", switchService.isChecked)
             .apply()
     }
@@ -360,13 +386,78 @@ class MainActivity : AppCompatActivity() {
         }
     }
     
+    override fun onResume() {
+        super.onResume()
+        updateServiceStatus()
+        
+        // Restore manual speed limit switch
+        val prefs = getSharedPreferences("HudPrefs", MODE_PRIVATE)
+        switchManualSpeedLimit.isChecked = prefs.getBoolean("manual_speed_limit_enabled", false)
+        if (switchManualSpeedLimit.isChecked) {
+            layoutSpeedLimitControl.visibility = android.view.View.VISIBLE
+        }
+    }
+    
+    private fun updateServiceStatus() {
+        // 1. Notification Listener
+        val isNotifEnabled = isNotificationServiceEnabled()
+        findViewById<android.view.View>(R.id.indicatorNotification).setBackgroundColor(
+            if (isNotifEnabled) android.graphics.Color.parseColor("#4CAF50") else android.graphics.Color.parseColor("#FF5252")
+        )
+        findViewById<Button>(R.id.btnEnableNotification).text = if (isNotifEnabled) "Настроено" else "Настроить"
+        
+        // 2. Accessibility Service
+        val isAccessEnabled = NavigationAccessibilityService.instance != null
+         findViewById<android.view.View>(R.id.indicatorAccessibility).setBackgroundColor(
+            if (isAccessEnabled) android.graphics.Color.parseColor("#4CAF50") else android.graphics.Color.parseColor("#FF5252")
+        )
+        findViewById<Button>(R.id.btnEnableAccessibility).text = if (isAccessEnabled) "Включено" else "Включить"
+        
+        // 3. Screen Capture
+        val isCaptureRunning = ScreenCaptureService.isRunning()
+        findViewById<android.view.View>(R.id.indicatorScreenCapture).setBackgroundColor(
+            if (isCaptureRunning) android.graphics.Color.parseColor("#4CAF50") else android.graphics.Color.parseColor("#FF5252")
+        )
+        findViewById<Button>(R.id.btnEnableScreenCapture).text = if (isCaptureRunning) "Работает" else "Запуск"
+        findViewById<Button>(R.id.btnEnableScreenCapture).isEnabled = !isCaptureRunning
+    }
+
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
         super.onActivityResult(requestCode, resultCode, data)
         
-        if (hud.handleActivityResult(requestCode, resultCode, data)) {
+        if (requestCode == MEDIA_PROJECTION_REQUEST_CODE) {
+            if (resultCode == RESULT_OK && data != null) {
+                // Start ScreenCaptureService
+                val intent = Intent(this, ScreenCaptureService::class.java)
+                intent.putExtra(ScreenCaptureService.EXTRA_RESULT_CODE, resultCode)
+                intent.putExtra(ScreenCaptureService.EXTRA_RESULT_DATA, data)
+                
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                    startForegroundService(intent)
+                } else {
+                    startService(intent)
+                }
+                
+                Toast.makeText(this, "Screen capture started", Toast.LENGTH_SHORT).show()
+                updateServiceStatus()
+            } else {
+                Toast.makeText(this, "Screen capture permission denied", Toast.LENGTH_SHORT).show()
+            }
+        } else if (hud.handleActivityResult(requestCode, resultCode, data)) {
             // Connection logic is handled inside hud.handleActivityResult
             // and the result will be reported via onConnectionStateChanged
         }
+    }
+    
+    private fun startScreenCapture() {
+        if (ScreenCaptureService.isRunning()) {
+            Toast.makeText(this, "Screen capture already running", Toast.LENGTH_SHORT).show()
+            return
+        }
+        
+        val mediaProjectionManager = getSystemService(Context.MEDIA_PROJECTION_SERVICE) as android.media.projection.MediaProjectionManager
+        val intent = mediaProjectionManager.createScreenCaptureIntent()
+        startActivityForResult(intent, MEDIA_PROJECTION_REQUEST_CODE)
     }
     
     private fun startHudService() {

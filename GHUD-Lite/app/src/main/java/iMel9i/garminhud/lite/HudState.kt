@@ -19,7 +19,8 @@ object HudState {
     @Volatile var isNavigating: Boolean = false
     @Volatile var distanceToTurn: String? = null // Raw string, e.g. "500 m"
     @Volatile var distanceToTurnMeters: Int? = null // Parsed value
-    @Volatile var turnIcon: Int? = null // Garmin HUD icon code
+    @Volatile var turnIcon: Int? = null // Garmin HUD icon code (Legacy)
+    @Volatile var activeHudIcon: HudIcon? = null // New System Mapping
     @Volatile var eta: String? = null // Estimated Time of Arrival
     @Volatile var remainingTime: String? = null // Time to destination
     @Volatile var trafficScore: Int? = null // 1-10 (Green/Yellow/Red)

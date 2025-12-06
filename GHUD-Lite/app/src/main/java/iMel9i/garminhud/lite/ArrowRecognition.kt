@@ -66,12 +66,22 @@ class ArrowImage(bitmap: Bitmap) {
     var binaryImage: Bitmap? = null
     
     init {
-        ImageUtils.toBinaryImage(bitmap, TREAT_AS_WHITE)
-        val resized = resizeImage(bitmap, STANDARD_IMG_SIZE)
+        // Create a MUTABLE copy to avoid IllegalStateException on setPixel
+        // Notification bitmaps are often immutable
+        val mutableBitmap = if (bitmap.isMutable) bitmap else bitmap.copy(Bitmap.Config.ARGB_8888, true)
+        
+        ImageUtils.toBinaryImage(mutableBitmap, TREAT_AS_WHITE)
+        val resized = resizeImage(mutableBitmap, STANDARD_IMG_SIZE)
         
         if (resized != null) {
             binaryImage = resized
             calculateHash(resized)
+        }
+        
+        // If we created a copy, we should recycle it after use (unless resized uses it)
+        // Note: resized might be the same instance if size matches
+        if (mutableBitmap !== bitmap && mutableBitmap !== resized) {
+            mutableBitmap.recycle()
         }
     }
     
@@ -137,6 +147,22 @@ class ArrowImage(bitmap: Bitmap) {
     }
     
     fun getArrowValue(): Long = leftValue
+
+    override fun toString(): String {
+        val sb = StringBuilder()
+        sb.append("Arrow Hash: $leftValue\n")
+        val interval = if (IMAGE_LEN > 0) IMAGE_LEN else 8
+        for (h in 0 until interval) {
+            for (w in 0 until interval) {
+                val index = h * interval + w
+                if (index < content.size) {
+                    sb.append(if (content[index]) "# " else ". ")
+                }
+            }
+            sb.append("\n")
+        }
+        return sb.toString()
+    }
 }
 
 /**
@@ -163,13 +189,26 @@ enum class ArrowDirection(val value: Long, val hudCode: Int) {
             var bestMatch = NONE
             var minSAD = Int.MAX_VALUE
             
-            for (arrow in values()) {
-                if (arrow == NONE) continue
-                
-                val sad = arrowImage.getSAD(arrow.value)
+            // 1. Check Custom Mappings first
+            for ((customHash, direction) in CustomArrowManager.getList()) {
+                val sad = arrowImage.getSAD(customHash)
                 if (sad < minSAD) {
                     minSAD = sad
-                    bestMatch = arrow
+                    bestMatch = direction
+                }
+            }
+            
+            // 2. Check Standard Mappings if no perfect custom match (or to find better standard match)
+            // If we found a very good custom match (SAD=0), we can skip standard
+            if (minSAD > 0) {
+                 for (arrow in values()) {
+                    if (arrow == NONE) continue
+                    
+                    val sad = arrowImage.getSAD(arrow.value)
+                    if (sad < minSAD) {
+                        minSAD = sad
+                        bestMatch = arrow
+                    }
                 }
             }
             
@@ -182,4 +221,46 @@ enum class ArrowDirection(val value: Long, val hudCode: Int) {
             }
         }
     }
+}
+
+object CustomArrowManager {
+    private const val PREFS_NAME = "CustomArrows"
+    private val mappings = mutableListOf<Pair<Long, ArrowDirection>>()
+    private var isLoaded = false
+
+    fun load(context: android.content.Context) {
+        if (isLoaded) return
+        val prefs = context.getSharedPreferences(PREFS_NAME, android.content.Context.MODE_PRIVATE)
+        mappings.clear()
+        prefs.all.forEach { (key, value) ->
+            try {
+                val hash = key.toLong()
+                val directionName = value as String
+                val direction = ArrowDirection.valueOf(directionName)
+                mappings.add(hash to direction)
+            } catch (e: Exception) {
+                Log.e("CustomArrowManager", "Error loading mapping: $key", e)
+            }
+        }
+        isLoaded = true
+        Log.i("CustomArrowManager", "Loaded ${mappings.size} custom arrows")
+    }
+
+    fun add(context: android.content.Context, hash: Long, direction: ArrowDirection) {
+        // Remove existing mapping for this hash if any
+        mappings.removeAll { it.first == hash }
+        mappings.add(hash to direction)
+        
+        val prefs = context.getSharedPreferences(PREFS_NAME, android.content.Context.MODE_PRIVATE)
+        prefs.edit().putString(hash.toString(), direction.name).apply()
+        Log.i("CustomArrowManager", "Added custom arrow: $hash -> $direction")
+    }
+    
+    fun remove(context: android.content.Context, hash: Long) {
+        mappings.removeAll { it.first == hash }
+        val prefs = context.getSharedPreferences(PREFS_NAME, android.content.Context.MODE_PRIVATE)
+        prefs.edit().remove(hash.toString()).apply()
+    }
+    
+    fun getList(): List<Pair<Long, ArrowDirection>> = mappings
 }

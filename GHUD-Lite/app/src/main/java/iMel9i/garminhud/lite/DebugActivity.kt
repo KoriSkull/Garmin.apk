@@ -7,11 +7,14 @@ import android.os.Looper
 import android.widget.Button
 import android.widget.TextView
 import androidx.appcompat.app.AppCompatActivity
-import java.util.Calendar
+import android.media.projection.MediaProjectionManager
+import android.content.Context
 
 class DebugActivity : AppCompatActivity() {
     
     private val updateHandler = Handler(Looper.getMainLooper())
+    private var currentArrowHash: Long? = null
+    
     private val updateRunnable = object : Runnable {
         override fun run() {
             updateDebugInfo()
@@ -24,6 +27,12 @@ class DebugActivity : AppCompatActivity() {
         setContentView(R.layout.activity_debug)
         
         title = "Debug Information"
+        
+        val btnCapture = findViewById<Button>(R.id.btnStartScreenCapture)
+        btnCapture.setOnClickListener {
+            val projectionManager = getSystemService(Context.MEDIA_PROJECTION_SERVICE) as MediaProjectionManager
+            startActivityForResult(projectionManager.createScreenCaptureIntent(), 1001)
+        }
         
         findViewById<Button>(R.id.btnRefresh).setOnClickListener { updateDebugInfo() }
         findViewById<Button>(R.id.btnAppSettings).setOnClickListener { startActivity(Intent(this, AppSettingsActivity::class.java)) }
@@ -51,6 +60,24 @@ class DebugActivity : AppCompatActivity() {
             updateDebugInfo()
         }
         
+        // Arrow Training Setup
+        val spinner = findViewById<android.widget.Spinner>(R.id.spinnerArrowTypes)
+        val adapter = android.widget.ArrayAdapter(this, android.R.layout.simple_spinner_item, ArrowDirection.values())
+        adapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item)
+        spinner.adapter = adapter
+        
+        findViewById<Button>(R.id.btnTrainArrow).setOnClickListener {
+            val hash = currentArrowHash
+            if (hash != null) {
+                val selectedArrow = spinner.selectedItem as ArrowDirection
+                CustomArrowManager.add(this, hash, selectedArrow)
+                android.widget.Toast.makeText(this, "Saved: $selectedArrow for hash $hash", android.widget.Toast.LENGTH_SHORT).show()
+                updateDebugInfo()
+            } else {
+                 android.widget.Toast.makeText(this, "No arrow hash available", android.widget.Toast.LENGTH_SHORT).show()
+            }
+        }
+        
         updateDebugInfo()
     }
 
@@ -62,6 +89,22 @@ class DebugActivity : AppCompatActivity() {
     override fun onPause() {
         super.onPause()
         updateHandler.removeCallbacks(updateRunnable)
+    }
+    
+    override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
+        super.onActivityResult(requestCode, resultCode, data)
+        if (requestCode == 1001 && resultCode == RESULT_OK && data != null) {
+            val intent = Intent(this, ScreenCaptureService::class.java).apply {
+                putExtra(ScreenCaptureService.EXTRA_RESULT_CODE, resultCode)
+                putExtra(ScreenCaptureService.EXTRA_RESULT_DATA, data)
+            }
+            if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
+                startForegroundService(intent)
+            } else {
+                startService(intent)
+            }
+            android.widget.Toast.makeText(this, "Screen Capture Started", android.widget.Toast.LENGTH_SHORT).show()
+        }
     }
     
     private fun updateDebugInfo() {
@@ -132,12 +175,20 @@ class DebugActivity : AppCompatActivity() {
              try {
                 val arrowImage = ArrowImage(arrowBitmapForHash.copy(android.graphics.Bitmap.Config.ARGB_8888, true))
                 val hash = arrowImage.getArrowValue()
+                
+                currentArrowHash = hash
+                findViewById<TextView>(R.id.trainingArrowHashDisplay).text = "Hash: $hash"
+                
                 val recognized = ArrowDirection.recognize(arrowImage)
                 findViewById<TextView>(R.id.maneuverArrowRecognized).text = "Recognized: ${if (recognized != ArrowDirection.NONE) recognized.name else "NO"} ($hash)"
              } catch (e: Exception) {
+                 currentArrowHash = null
+                 findViewById<TextView>(R.id.trainingArrowHashDisplay).text = "Hash: Error"
                  findViewById<TextView>(R.id.maneuverArrowRecognized).text = "Error hashing: ${e.message}"
              }
         } else {
+            currentArrowHash = null
+            findViewById<TextView>(R.id.trainingArrowHashDisplay).text = "Hash: -"
             findViewById<TextView>(R.id.maneuverArrowRecognized).text = "Recognized: NO IMAGE"
         }
         

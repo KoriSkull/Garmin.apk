@@ -48,6 +48,14 @@ object DebugLog {
         )
         logs.add(entry)
         
+        // Write to system log as well
+        when (level) {
+            Level.DEBUG -> android.util.Log.d(tag, message)
+            Level.INFO -> android.util.Log.i(tag, message)
+            Level.WARN -> android.util.Log.w(tag, message)
+            Level.ERROR -> android.util.Log.e(tag, message)
+        }
+        
         // Keep only last MAX_LOGS entries
         while (logs.size > MAX_LOGS) {
             logs.poll()

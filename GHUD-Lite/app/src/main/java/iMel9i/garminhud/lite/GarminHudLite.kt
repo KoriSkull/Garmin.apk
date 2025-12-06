@@ -233,17 +233,24 @@ class GarminHudLite(private val context: Context) {
     
     /**
      * Установить направление (стрелку)
-     * @param angle: 0x10=Straight, 0x20=EasyLeft, 0x40=Left, 0x80=SharpLeft,
-     *               0x08=EasyRight, 0x04=Right, 0x02=SharpRight
+     * @param type: 0x01=Lane, 0x02=LongerLane, 0x04=LeftRoundabout, 0x08=RightRoundabout, 0x80=ArrowOnly
+     * @param angle: 0x10=Straight, 0x20=EasyLeft, 0x40=Left, 0x80=SharpLeft...
      */
-    fun setDirection(angle: Int) {
+    fun setDirection(type: Int, angle: Int) {
         val arr = charArrayOf(
             0x01.toChar(),  // Command: Direction
-            0x80.toChar(),  // Type: ArrowOnly
-            0x00.toChar(),  // Roundabout (unused)
+            type.toChar(),  // Type
+            0x00.toChar(),  // Roundabout (unused/extended)
             angle.toChar()  // Direction angle
         )
         sendToHud(arr)
+    }
+
+    /**
+     * Shortcut for Simple Arrow
+     */
+    fun setArrow(angle: Int) {
+        setDirection(0x80, angle)
     }
     
     /**

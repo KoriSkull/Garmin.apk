@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:orientation="vertical">
+
+    <TextView
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:padding="16dp"
+        android:text="Список всех иконок HUD"
+        android:textSize="20sp"
+        android:textStyle="bold"
+        android:background="#EEEEEE"
+        android:gravity="center" />
+        
+    <TextView
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:padding="8dp"
+        android:text="Нажмите на элемент, чтобы отобразить его на проекции"
+        android:gravity="center"
+        android:textColor="#757575"/>
+
+    <ListView
+        android:id="@+id/listHudIcons"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent" />
+
+</LinearLayout>

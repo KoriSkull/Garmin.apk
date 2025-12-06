@@ -24,6 +24,8 @@ class NavigationAccessibilityService : AccessibilityService() {
         instance = this
         configManager = AppConfigManager(this)
         DebugLog.i(TAG, "Service created")
+        CustomArrowManager.load(this)
+        CapturedIconRepository.init(this)
     }
 
     override fun onServiceConnected() {
@@ -224,57 +226,23 @@ class NavigationAccessibilityService : AccessibilityService() {
             
             DebugLog.i(TAG, "Arrow bounds: $rect")
             
-            // Use takeScreenshot API (Android 11+)
-            if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.R) {
-                takeScreenshot(
-                    android.view.Display.DEFAULT_DISPLAY,
-                    mainExecutor,
-                    object : android.accessibilityservice.AccessibilityService.TakeScreenshotCallback {
-                        override fun onSuccess(screenshot: android.accessibilityservice.AccessibilityService.ScreenshotResult) {
-                            try {
-                                val hardwareBuffer = screenshot.hardwareBuffer
-                                val bitmap = android.graphics.Bitmap.wrapHardwareBuffer(hardwareBuffer, screenshot.colorSpace)
-                                
-                                if (bitmap != null) {
-                                    // Crop to arrow bounds
-                                    val left = rect.left.coerceAtLeast(0)
-                                    val top = rect.top.coerceAtLeast(0)
-                                    val width = rect.width().coerceAtMost(bitmap.width - left)
-                                    val height = rect.height().coerceAtMost(bitmap.height - top)
-                                    
-                                    if (width > 0 && height > 0) {
-                                        val cropped = android.graphics.Bitmap.createBitmap(bitmap, left, top, width, height)
-                                        bitmap.recycle()
-                                        hardwareBuffer.close()
-                                        
-                                        processArrowBitmap(cropped)
-                                    } else {
-                                        bitmap.recycle()
-                                        hardwareBuffer.close()
-                                        HudService.navDebug.arrowStatus = "Invalid crop"
-                                        isProcessingArrow = false
-                                    }
-                                } else {
-                                    hardwareBuffer.close()
-                                    HudService.navDebug.arrowStatus = "Bitmap null"
-                                    isProcessingArrow = false
-                                }
-                            } catch (e: Exception) {
-                                DebugLog.e(TAG, "Screenshot processing error: ${e.message}")
-                                HudService.navDebug.arrowStatus = "Error: ${e.message}"
-                                isProcessingArrow = false
-                            }
-                        }
-
-                        override fun onFailure(errorCode: Int) {
-                            DebugLog.e(TAG, "Screenshot failed: $errorCode")
-                            HudService.navDebug.arrowStatus = "Screenshot failed: $errorCode"
-                            isProcessingArrow = false
-                        }
+            // Use ScreenCaptureService (MediaProjection API)
+            val captureService = ScreenCaptureService.instance
+            if (captureService != null) {
+                DebugLog.i(TAG, "Attempting screenshot via MediaProjection")
+                HudService.navDebug.arrowStatus = "Taking screenshot..."
+                
+                captureService.captureScreen(rect) { bitmap ->
+                    if (bitmap != null) {
+                        processArrowBitmap(bitmap)
+                    } else {
+                        HudService.navDebug.arrowStatus = "Screenshot failed"
+                        isProcessingArrow = false
                     }
-                )
+                }
             } else {
-                HudService.navDebug.arrowStatus = "Android 11+ required"
+                HudService.navDebug.arrowStatus = "Screen capture not started"
+                DebugLog.w(TAG, "ScreenCaptureService not running - start it from MainActivity")
                 isProcessingArrow = false
             }
         } catch (e: Exception) {
@@ -295,9 +263,26 @@ class NavigationAccessibilityService : AccessibilityService() {
             val hash = arrowImg.getArrowValue()
             DebugLog.i(TAG, "Arrow Hash: $hash")
             
+            // === NEW SYSTEM: Capture & Check Mapping ===
+            CapturedIconRepository.saveIcon(this, bitmap, hash)
+            val mappedIcon = CapturedIconRepository.getMapping(hash)
+            
+            if (mappedIcon != null) {
+                HudState.activeHudIcon = mappedIcon
+                HudService.navDebug.arrowStatus = "Mapped: ${mappedIcon.displayName}"
+                HudState.notifyUpdate()
+                return
+            }
+            // ===========================================
+            
+            // === DEBUG: SAVE IMAGE ===
+            saveDebugImage(bitmap, hash)
+            // =========================
+            
             val recognized = ArrowDirection.recognize(arrowImg)
             if (recognized != ArrowDirection.NONE) {
                 HudState.turnIcon = recognized.hudCode
+                HudState.activeHudIcon = null // Clear strict mapping so legacy works
                 HudService.navDebug.arrowStatus = "Recognized: ${recognized.name} ($hash)"
                 HudState.notifyUpdate()
             } else {
@@ -308,6 +293,24 @@ class NavigationAccessibilityService : AccessibilityService() {
             HudService.navDebug.arrowStatus = "Process error"
         } finally {
             isProcessingArrow = false
+        }
+    }
+
+    private fun saveDebugImage(bitmap: android.graphics.Bitmap, hash: Long) {
+        try {
+            val dir = java.io.File(getExternalFilesDir(null), "debug_arrows")
+            if (!dir.exists()) dir.mkdirs()
+            
+            val timestamp = java.text.SimpleDateFormat("yyyyMMdd_HHmmss_SSS", java.util.Locale.US).format(java.util.Date())
+            val filename = "arrow_${timestamp}_$hash.png"
+            val file = java.io.File(dir, filename)
+            
+            java.io.FileOutputStream(file).use { out ->
+                bitmap.compress(android.graphics.Bitmap.CompressFormat.PNG, 100, out)
+            }
+            DebugLog.i(TAG, "Saved debug arrow: ${file.absolutePath}")
+        } catch (e: Exception) {
+            DebugLog.e(TAG, "Failed to save debug image: ${e.message}")
         }
     }
 
@@ -329,9 +332,9 @@ class NavigationAccessibilityService : AccessibilityService() {
         val nodeId = node.viewIdResourceName
         if (nodeId != null) {
             if (partial) {
-                if (nodeId.endsWith(":id/$resourceId") || nodeId.endsWith("/$resourceId")) return node // Don't recycle node if returning it
+                if (nodeId.contains(resourceId)) return node 
             } else {
-                if (nodeId == resourceId) return node // Don't recycle node if returning it
+                if (nodeId == resourceId) return node
             }
         }
         
@@ -339,9 +342,6 @@ class NavigationAccessibilityService : AccessibilityService() {
             val child = node.getChild(i) ?: continue
             val result = findNodeByResourceId(child, resourceId, partial)
             if (result != null) {
-                // Found it!
-                // If result is NOT child, we can recycle child.
-                // If result IS child, we must NOT recycle child.
                 if (result != child) {
                     child.recycle()
                 }
@@ -352,24 +352,59 @@ class NavigationAccessibilityService : AccessibilityService() {
         return null
     }
     
-    // Fallback: Traverse entire tree to find node (slower but more reliable for debugging)
-    private fun findNodeRecursiveFallback(node: AccessibilityNodeInfo, resourceId: String): AccessibilityNodeInfo? {
-        val nodeId = node.viewIdResourceName
-        if (nodeId != null && nodeId == resourceId) {
-            return node // Return without recycling
+    // Fallback: Heuristic search for arrow if ID not found
+    private fun findNodeRecursiveFallback(rootNode: AccessibilityNodeInfo, originalId: String): AccessibilityNodeInfo? {
+        // Only run fallback for arrow searches (heuristic based)
+        if (!originalId.contains("maneuver") && !originalId.contains("arrow")) return null
+        
+        val displayMetrics = resources.displayMetrics
+        val screenWidth = displayMetrics.widthPixels
+        val screenHeight = displayMetrics.heightPixels
+        
+        return findArrowNodeHeuristic(rootNode, screenWidth, screenHeight)
+    }
+    
+    private fun findArrowNodeHeuristic(node: AccessibilityNodeInfo, w: Int, h: Int): AccessibilityNodeInfo? {
+        val rect = android.graphics.Rect()
+        node.getBoundsInScreen(rect)
+        
+        // Check if this node is a candidate
+        
+        // 1. Position: Top-Left quadrant (usually)
+        // Adjust for status bar (approx 60px)
+        val isTopLeft = rect.left < w / 2 && rect.top < h / 3 && rect.top > 50
+        
+        // 2. Size: Reasonable size for an icon
+        val width = rect.width()
+        val height = rect.height()
+        val validSize = width > 50 && height > 50 && width < 400 && height < 400
+        
+        // 3. Aspect Ratio: Square-ish
+        val ratio = width.toFloat() / height.toFloat()
+        val isSquareish = ratio in 0.8f..1.2f
+        
+        // 4. Type: Image or generic View without text
+        val className = node.className?.toString() ?: ""
+        val isImage = className.contains("ImageView") || (className.contains("View") && (node.text == null || node.text.isEmpty()))
+        
+        if (isTopLeft && validSize && isSquareish && isImage) {
+            DebugLog.i(TAG, "Heuristic candidate: $className bounds=$rect")
+            return node
         }
         
+        // Recursion
         for (i in 0 until node.childCount) {
-            val child = node.getChild(i) ?: continue
-            val result = findNodeRecursiveFallback(child, resourceId)
-            if (result != null) {
-                if (result != child) {
-                    child.recycle()
+            val child = node.getChild(i)
+            if (child != null) {
+                val result = findArrowNodeHeuristic(child, w, h)
+                if (result != null) {
+                    if (result != child) child.recycle()
+                    return result
                 }
-                return result
+                child.recycle()
             }
-            child.recycle()
         }
+        
         return null
     }
 

@@ -20,7 +20,113 @@
             android:padding="12dp"
             android:background="#E0E0E0"
             android:gravity="center"
-            android:layout_marginBottom="24dp" />
+            android:layout_marginBottom="16dp" />
+
+        <!-- Services Status Section -->
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical"
+            android:background="#F5F5F5"
+            android:padding="12dp"
+            android:layout_marginBottom="24dp">
+            
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="Сервисы Навигации"
+                android:textStyle="bold"
+                android:layout_marginBottom="8dp"/>
+
+            <!-- Notification Listener -->
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="horizontal"
+                android:gravity="center_vertical"
+                android:layout_marginBottom="8dp">
+                
+                <View
+                    android:id="@+id/indicatorNotification"
+                    android:layout_width="16dp"
+                    android:layout_height="16dp"
+                    android:background="#FF5252" 
+                    android:layout_marginEnd="12dp"/>
+                    
+                <TextView
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:text="Чтение уведомлений"
+                    android:textSize="14sp"/>
+                    
+                <Button
+                    android:id="@+id/btnEnableNotification"
+                    android:layout_width="wrap_content"
+                    android:layout_height="40dp"
+                    android:text="Настроить"
+                    android:textSize="12sp"/>
+            </LinearLayout>
+
+            <!-- Accessibility Service -->
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="horizontal"
+                android:gravity="center_vertical"
+                android:layout_marginBottom="8dp">
+                
+                <View
+                    android:id="@+id/indicatorAccessibility"
+                    android:layout_width="16dp"
+                    android:layout_height="16dp"
+                    android:background="#FF5252"
+                    android:layout_marginEnd="12dp"/>
+                    
+                <TextView
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:text="Анализ экрана"
+                    android:textSize="14sp"/>
+                    
+                <Button
+                    android:id="@+id/btnEnableAccessibility"
+                    android:layout_width="wrap_content"
+                    android:layout_height="40dp"
+                    android:text="Включить"
+                    android:textSize="12sp"/>
+            </LinearLayout>
+
+            <!-- Screen Capture -->
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="horizontal"
+                android:gravity="center_vertical">
+                
+                <View
+                    android:id="@+id/indicatorScreenCapture"
+                    android:layout_width="16dp"
+                    android:layout_height="16dp"
+                    android:background="#FF5252"
+                    android:layout_marginEnd="12dp"/>
+                    
+                <TextView
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:text="Захват экрана (Стрелки)"
+                    android:textSize="14sp"/>
+                    
+                <Button
+                    android:id="@+id/btnEnableScreenCapture"
+                    android:layout_width="wrap_content"
+                    android:layout_height="40dp"
+                    android:text="Запуск"
+                    android:textSize="12sp"/>
+            </LinearLayout>
+        </LinearLayout>
 
         <Button
             android:id="@+id/btnSelectHud"
@@ -202,6 +308,25 @@
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:orientation="horizontal"
+            android:layout_marginBottom="12dp">
+            
+            <TextView
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:text="Распознавание из уведомлений Яндекс"
+                android:textSize="16sp" />
+                
+            <Switch
+                android:id="@+id/switchYandexNotifications"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content" />
+        </LinearLayout>
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
             android:layout_marginBottom="24dp">
             
             <TextView
@@ -243,10 +368,34 @@
             android:layout_marginBottom="12dp" />
 
         <Button
+            android:id="@+id/btn_open_icon_mapping"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="1. Icon Mappings (Capture)"
+            android:textSize="16sp"
+            android:layout_marginBottom="12dp" />
+
+        <Button
+            android:id="@+id/btn_open_gallery"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="2. Все иконки HUD (Gallery)"
+            android:textSize="16sp"
+            android:layout_marginBottom="12dp" />
+
+        <Button
             android:id="@+id/btnLayoutEditor"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:text="🎨 Конструктор Экрана"
+            android:textSize="16sp"
+            android:layout_marginBottom="12dp" />
+
+        <Button
+            android:id="@+id/btnStartScreenCapture"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="📸 Start Arrow Recognition"
             android:textSize="16sp" />
 
     </LinearLayout>
