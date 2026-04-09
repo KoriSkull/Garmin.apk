@@ -27,6 +27,7 @@ import android.util.Log;
 import android.widget.RemoteViews;
 
 import androidx.annotation.RequiresApi;
+import androidx.core.content.ContextCompat;
 
 import java.io.IOException;
 import java.io.InputStream;
@@ -165,7 +166,7 @@ public class NotificationMonitor extends NotificationListenerService {
         IntentFilter intentFilter = new IntentFilter();
         intentFilter.addAction(getString(R.string.broadcast_receiver_notification_monitor));
 
-        registerReceiver(mMsgReceiver, intentFilter);
+        ContextCompat.registerReceiver(this, mMsgReceiver, intentFilter, ContextCompat.RECEIVER_NOT_EXPORTED);
 
         // ========================================================================================
         sStaticInstance = this;

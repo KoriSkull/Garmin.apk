@@ -496,7 +496,7 @@ public class MainActivity extends AppCompatActivity {
         mMsgReceiver = new MsgReceiver();
         IntentFilter intentFilter = new IntentFilter();
         intentFilter.addAction(getString(R.string.broadcast_receiver_main_activity));
-        registerReceiver(mMsgReceiver, intentFilter);
+        ContextCompat.registerReceiver(this, mMsgReceiver, intentFilter, ContextCompat.RECEIVER_NOT_EXPORTED);
 
         // INITIALIZE RECEIVER
         IntentFilter filter = new IntentFilter(Intent.ACTION_SCREEN_ON);
@@ -507,7 +507,7 @@ public class MainActivity extends AppCompatActivity {
             }
         };
 
-        registerReceiver(mScreenReceiver, filter);
+        ContextCompat.registerReceiver(this, mScreenReceiver, filter, ContextCompat.RECEIVER_NOT_EXPORTED);
         // ========================================================================================
 
         // ========================================================================================
