@@ -14,12 +14,22 @@ import androidx.appcompat.app.AppCompatActivity
 class HudGalleryActivity : AppCompatActivity() {
 
     private lateinit var hud: GarminHudLite
+    private val prefsName = "HudPrefs"
+    private val keyDeviceAddress = "device_address"
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_hud_gallery)
 
         hud = GarminHudLite(this)
+        hud.onConnectionStateChanged = { connected, deviceName ->
+            runOnUiThread {
+                if (connected) {
+                    Toast.makeText(this, "HUD connected: ${deviceName ?: "unknown"}", Toast.LENGTH_SHORT).show()
+                }
+            }
+        }
+        tryAutoConnect()
 
         val listView = findViewById<ListView>(R.id.listHudIcons)
         val icons = HudIcon.values()
@@ -35,8 +45,12 @@ class HudGalleryActivity : AppCompatActivity() {
 
     private fun previewIcon(icon: HudIcon) {
         if (!hud.isConnected()) {
-             Toast.makeText(this, "HUD not connected", Toast.LENGTH_SHORT).show()
-             return
+            if (tryAutoConnect()) {
+                Toast.makeText(this, "Connecting to HUD… try again in a moment", Toast.LENGTH_SHORT).show()
+            } else {
+                Toast.makeText(this, "HUD not connected. Connect device in main screen first.", Toast.LENGTH_SHORT).show()
+            }
+            return
         }
 
         // Send to HUD
@@ -53,6 +67,13 @@ class HudGalleryActivity : AppCompatActivity() {
         }
 
         Toast.makeText(this, "Sent: ${icon.displayName}", Toast.LENGTH_SHORT).show()
+    }
+
+    private fun tryAutoConnect(): Boolean {
+        val prefs = getSharedPreferences(prefsName, MODE_PRIVATE)
+        val address = prefs.getString(keyDeviceAddress, null) ?: return false
+        hud.connectToDevice(address)
+        return true
     }
 
     private class HudIconAdapter(context: Context, icons: Array<HudIcon>) : 

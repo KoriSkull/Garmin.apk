@@ -1,0 +1,101 @@
+name: Build GHUD-Lite APK
+
+on:
+  workflow_dispatch:
+    inputs:
+      build_release:
+        description: 'Build signed release APK (requires secrets)'
+        required: false
+        type: boolean
+        default: false
+  push:
+    tags:
+      - 'v*'
+    paths:
+      - 'GHUD-Lite/**'
+      - '.github/workflows/build-ghud-lite-apk.yml'
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Java 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v4
+
+      - name: Build debug APK
+        working-directory: GHUD-Lite
+        run: ./gradlew assembleDebug --no-daemon
+
+      - name: Upload APK artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ghud-lite-debug-apk
+          path: GHUD-Lite/app/build/outputs/apk/debug/*.apk
+          if-no-files-found: error
+
+  build_release:
+    if: ${{ startsWith(github.ref, 'refs/tags/v') || (github.event_name == 'workflow_dispatch' && inputs.build_release) }}
+    runs-on: ubuntu-latest
+    env:
+      KEYSTORE_B64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+      KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+      KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+      KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Validate secrets
+        run: |
+          test -n "$KEYSTORE_B64"
+          test -n "$KEYSTORE_PASSWORD"
+          test -n "$KEY_ALIAS"
+          test -n "$KEY_PASSWORD"
+
+      - name: Setup Java 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v4
+
+      - name: Prepare keystore.properties
+        working-directory: GHUD-Lite
+        run: |
+          echo "$KEYSTORE_B64" | base64 -d > release.keystore
+          cat > keystore.properties <<EOF
+          keystore.path=release.keystore
+          keystore.password=$KEYSTORE_PASSWORD
+          keystore.alias=$KEY_ALIAS
+          keystore.alias_password=$KEY_PASSWORD
+          EOF
+
+      - name: Build release APK
+        working-directory: GHUD-Lite
+        run: ./gradlew assembleRelease --no-daemon
+
+      - name: Upload release APK artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ghud-lite-release-apk
+          path: GHUD-Lite/app/build/outputs/apk/release/*.apk
+          if-no-files-found: error
+
+      - name: Publish GitHub Release asset
+        if: ${{ startsWith(github.ref, 'refs/tags/v') }}
+        uses: softprops/action-gh-release@v2
+        with:
+          files: GHUD-Lite/app/build/outputs/apk/release/*.apk
