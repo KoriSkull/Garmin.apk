@@ -5,8 +5,12 @@ import android.content.Context;
 import android.content.Intent;
 import android.content.IntentFilter;
 import android.util.Log;
-import sky4s.garminhud.eUnits;
+
+import androidx.core.content.ContextCompat;
+
+import sky4s.garminhud.eOutAngle;
 import sky4s.garminhud.eOutType;
+import sky4s.garminhud.eUnits;
 
 /**
  * Yandex Data Handler - registers broadcast receiver and sends data to HUD
@@ -18,6 +22,7 @@ public class YandexDataHandler {
     private static final String TAG = "YandexDataHandler";
     private MainActivity mainActivity;
     private BroadcastReceiver yandexReceiver;
+    private eOutAngle lastAngle = eOutAngle.AsDirection;
 
     public YandexDataHandler(MainActivity activity) {
         this.mainActivity = activity;
@@ -96,32 +101,54 @@ public class YandexDataHandler {
             }
 
             private void updateHudDirection(String desc) {
-                desc = desc.toUpperCase();
-                sky4s.garminhud.eOutAngle angle = sky4s.garminhud.eOutAngle.Straight;
-                sky4s.garminhud.eOutType type = sky4s.garminhud.eOutType.Lane;
+                String maneuver = desc.toUpperCase();
+                eOutAngle angle = eOutAngle.Straight;
+                eOutType type = eOutType.Lane;
+                eOutAngle roundaboutOut = eOutAngle.AsDirection;
 
-                if (desc.contains("LEFT")) {
-                    angle = sky4s.garminhud.eOutAngle.Left;
-                    if (desc.contains("SHARP"))
-                        angle = sky4s.garminhud.eOutAngle.SharpLeft;
-                    if (desc.contains("EASY") || desc.contains("SLIGHT"))
-                        angle = sky4s.garminhud.eOutAngle.EasyLeft;
-                } else if (desc.contains("RIGHT")) {
-                    angle = sky4s.garminhud.eOutAngle.Right;
-                    if (desc.contains("SHARP"))
-                        angle = sky4s.garminhud.eOutAngle.SharpRight;
-                    if (desc.contains("EASY") || desc.contains("SLIGHT"))
-                        angle = sky4s.garminhud.eOutAngle.EasyRight;
-                } else if (desc.contains("UTURN")) {
-                    angle = sky4s.garminhud.eOutAngle.LeftDown; // Standard U-Turn
+                // Handle UTURN first to avoid matching LEFT/RIGHT from UTURN_LEFT/UTURN_RIGHT
+                if (maneuver.contains("UTURN")) {
+                    angle = maneuver.contains("RIGHT") ? eOutAngle.RightDown : eOutAngle.LeftDown;
+                } else if (maneuver.contains("ROUNDABOUT")) {
+                    boolean rightRoundabout = maneuver.contains("RIGHT");
+                    type = rightRoundabout ? eOutType.RightRoundabout : eOutType.LeftRoundabout;
+
+                    if (maneuver.contains("SHARP")) {
+                        angle = rightRoundabout ? eOutAngle.SharpRight : eOutAngle.SharpLeft;
+                    } else if (maneuver.contains("EASY") || maneuver.contains("SLIGHT")) {
+                        angle = rightRoundabout ? eOutAngle.EasyRight : eOutAngle.EasyLeft;
+                    } else if (maneuver.contains("STRAIGHT")) {
+                        angle = eOutAngle.Straight;
+                    } else {
+                        angle = rightRoundabout ? eOutAngle.Right : eOutAngle.Left;
+                    }
+                    roundaboutOut = angle;
+                } else if (maneuver.contains("LEFT")) {
+                    angle = eOutAngle.Left;
+                    if (maneuver.contains("SHARP"))
+                        angle = eOutAngle.SharpLeft;
+                    if (maneuver.contains("EASY") || maneuver.contains("SLIGHT"))
+                        angle = eOutAngle.EasyLeft;
+                } else if (maneuver.contains("RIGHT")) {
+                    angle = eOutAngle.Right;
+                    if (maneuver.contains("SHARP"))
+                        angle = eOutAngle.SharpRight;
+                    if (maneuver.contains("EASY") || maneuver.contains("SLIGHT"))
+                        angle = eOutAngle.EasyRight;
+                } else if (maneuver.contains("STRAIGHT")) {
+                    angle = eOutAngle.Straight;
                 }
 
-                mainActivity.mHud.setDirection(angle, type, sky4s.garminhud.eOutAngle.Straight);
+                if (angle != lastAngle) {
+                    lastAngle = angle;
+                    Log.d(TAG, "HUD direction update: " + maneuver + " => " + angle + ", type=" + type);
+                }
+                mainActivity.mHud.setDirection(angle, type, roundaboutOut);
             }
         };
 
         IntentFilter filter = new IntentFilter("sky4s.garminhud.app.YANDEX_NAVI_UPDATE");
-        mainActivity.registerReceiver(yandexReceiver, filter);
+        ContextCompat.registerReceiver(mainActivity, yandexReceiver, filter, ContextCompat.RECEIVER_NOT_EXPORTED);
     }
 
     public void unregisterReceiver() {

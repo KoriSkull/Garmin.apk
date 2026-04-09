@@ -31,6 +31,27 @@
 ### 🚀 Status: **FULLY WORKING** ✅
 All features implemented and tested. Application successfully builds and runs on Android devices.
 
+### 📤 Uploading APK from restricted CI/sandbox environments
+If your agent/CI cannot upload APK files to file-sharing services, it is usually caused by outbound proxy restrictions (HTTP 403 / CONNECT blocked) and missing Git remote credentials.
+
+To allow direct uploads (transfer.sh, catbox, 0x0, etc.), make sure the environment has:
+1. Outbound HTTPS access to target hosts (or proxy allowlist entries).
+2. `CONNECT` enabled on proxy for large file uploads.
+3. Valid DNS resolution for upload hosts.
+4. Optional: configured `git remote` + token/SSH if artifacts should be pushed to GitHub instead of file-sharing.
+
+Quick self-check commands:
+```bash
+curl -I https://transfer.sh
+curl -I https://catbox.moe
+git remote -v
+```
+
+If uploads are blocked in sandbox, upload locally from your workstation:
+```bash
+curl --upload-file GHUD-Lite/releases/ghud-lite-debug.apk https://transfer.sh/ghud-lite-debug.apk
+```
+
 ---
 
 ## Classic Projects
