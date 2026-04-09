@@ -13,6 +13,7 @@ import android.widget.TextView;
 import android.util.Log;
 
 import androidx.fragment.app.Fragment;
+import androidx.core.content.ContextCompat;
 
 import java.text.SimpleDateFormat;
 import java.util.Date;
@@ -85,7 +86,7 @@ public class Page3Fragment extends Fragment {
 
         IntentFilter filter = new IntentFilter("sky4s.garminhud.app.YANDEX_NAVI_UPDATE");
         if (getActivity() != null) {
-            getActivity().registerReceiver(yandexReceiver, filter);
+            ContextCompat.registerReceiver(getActivity(), yandexReceiver, filter, ContextCompat.RECEIVER_NOT_EXPORTED);
         }
     }
 

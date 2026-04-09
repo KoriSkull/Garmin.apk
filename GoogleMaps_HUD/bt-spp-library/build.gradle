@@ -2,8 +2,7 @@ apply plugin: 'com.android.library'
 
 android {
     namespace 'app.akexorcist.bluetotohspp.library'
-    compileSdkVersion 35
-    buildToolsVersion '34.0.0'
+    compileSdk 35
 
     defaultConfig {
         versionCode Integer.parseInt(VERSION_CODE)

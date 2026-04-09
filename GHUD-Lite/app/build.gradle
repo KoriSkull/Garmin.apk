@@ -1,6 +1,15 @@
 apply plugin: 'com.android.application'
 apply plugin: 'kotlin-android'
 
+def keystoreProps = new Properties()
+def keystorePropsFile = rootProject.file('keystore.properties')
+def hasReleaseKeystore = false
+
+if (keystorePropsFile.exists()) {
+    keystoreProps.load(new FileInputStream(keystorePropsFile))
+    hasReleaseKeystore = keystoreProps.getProperty('keystore.path') != null
+}
+
 android {
     namespace 'iMel9i.garminhud.lite'
     
@@ -14,11 +23,25 @@ android {
         versionCode 1
         versionName "1.0"
     }
+
+    signingConfigs {
+        release {
+            if (hasReleaseKeystore) {
+                storeFile file(keystoreProps.getProperty('keystore.path'))
+                storePassword keystoreProps.getProperty('keystore.password')
+                keyAlias keystoreProps.getProperty('keystore.alias')
+                keyPassword keystoreProps.getProperty('keystore.alias_password')
+            }
+        }
+    }
     
     buildTypes {
         release {
             minifyEnabled false
             proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
+            if (hasReleaseKeystore) {
+                signingConfig signingConfigs.release
+            }
         }
     }
     

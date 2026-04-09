@@ -200,3 +200,19 @@ object HudState {
 **Минимальный Android:** 9.0 (API 28)  
 **Целевой SDK:** 35
 
+
+## 📦 Сборка APK и загрузка в GitHub (локально)
+
+Для автоматизации добавлен скрипт:
+
+```bash
+./build_and_push_apk.sh
+```
+
+Скрипт:
+1. Собирает `assembleDebug`.
+2. Копирует APK в `GHUD-Lite/releases/ghud-lite-debug.apk`.
+3. Делает `git add/commit` APK.
+4. Пушит текущую ветку в `origin`.
+
+> Нужны настроенные `git remote` и доступ в GitHub из вашей сети.
