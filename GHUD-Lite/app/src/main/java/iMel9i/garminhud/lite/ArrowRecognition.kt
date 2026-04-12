@@ -55,7 +55,7 @@ class ArrowImage(bitmap: Bitmap) {
     companion object {
         private const val TAG = "ArrowImage"
         const val IMAGE_LEN = 8 // 8x8 grid
-        const val CONTENT_LEN = IMAGE_LEN * IMAGE_LEN
+        const val CONTENT_LEN = IMAGE_LEN * 48
         private const val TREAT_AS_WHITE = 200
         private const val ALPHA_AS_WHITE = 254
         private const val STANDARD_IMG_SIZE = 132
