@@ -362,22 +362,30 @@ class HudService : Service(), LocationListener {
         hudDebug.lastUpdateTime = SimpleDateFormat("HH:mm:ss", Locale.getDefault()).format(Date())
     }
 
-    private fun buildLaneMasksFromString(value: String): Pair<Int, Int> {
-        var normalized = value.filter { it == '0' || it == '1' || it == ' ' }.take(6)
-        while (normalized.length < 6) {
-            normalized = if (normalized.length and 1 == 1) " $normalized" else "$normalized "
-        }
+private fun buildLaneMasksFromString(value: String): Pair<Int, Int> {
+    val raw = value.filter { it == '0' || it == '1' || it == ' ' }.take(6)
 
-        var outlineMask = 0
-        var arrowMask = 0
-        for (index in normalized.indices) {
-            val ch = normalized[index]
-            val bit = 1 shl (6 - index)
-            if (ch == '0' || ch == '1') outlineMask = outlineMask or bit
-            if (ch == '1') arrowMask = arrowMask or bit
+    val normalized = when {
+        raw.length >= 6 -> raw.take(6)
+        else -> {
+            val totalPad = 6 - raw.length
+            val leftPad = totalPad / 2
+            val rightPad = totalPad - leftPad
+            " ".repeat(leftPad) + raw + " ".repeat(rightPad)
         }
-        return arrowMask to outlineMask
     }
+
+    var outlineMask = 0
+    var arrowMask = 0
+
+    for (index in normalized.indices) {
+        val ch = normalized[index]
+        val bit = 1 shl (6 - index)
+        if (ch == '0' || ch == '1') outlineMask = outlineMask or bit
+        if (ch == '1') arrowMask = arrowMask or bit
+    }
+    return arrowMask to outlineMask
+}
 
     private fun Int.toHexByte(): String = this.and(0xFF).toString(16).uppercase().padStart(2, '0')
 
