@@ -607,15 +607,10 @@ class NavigationNotificationListener : NotificationListenerService() {
         val lanesOrdered = if (ordered.size <= 6) {
             ordered
         } else {
-            // Keep lane row shape when detector finds noisy >6 arrows.
-            // Pick evenly distributed candidates to preserve left->right ordering.
-            val sampled = mutableListOf<Pair<ArrowCandidate, ArrowMetrics>>()
-            val lastIndex = ordered.lastIndex.toFloat().coerceAtLeast(1f)
-            for (i in 0 until 6) {
-                val srcIndex = kotlin.math.round((i.toFloat() / 5f) * lastIndex)
-                    .toInt()
-                    .coerceIn(0, ordered.lastIndex)
-                sampled.add(ordered[srcIndex])
+    ordered
+        .sortedByDescending { it.second.totalScore }
+        .take(6)
+        .sortedBy { it.first.bounds.exactCenterX() }
             }
             sampled
         }
