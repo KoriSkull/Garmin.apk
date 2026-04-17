@@ -453,9 +453,9 @@ class NavigationNotificationListener : NotificationListenerService() {
         packageName: String
     ): List<ArrowCandidate> {
         val bmp = candidate.bitmap
-        if (bmp.width < 120 || bmp.height < 24) return listOf(candidate)
-        val aspect = bmp.width.toFloat() / bmp.height.toFloat()
-        if (aspect < 2.0f) return listOf(candidate)
+if (bmp.width < 80 || bmp.height < 18) return listOf(candidate)
+val aspect = bmp.width.toFloat() / bmp.height.toFloat()
+if (aspect < 1.6f) return listOf(candidate)
 
         val (minV, maxS) = when {
             packageName.startsWith("ru.yandex") -> 0.74f to 0.30f
@@ -487,8 +487,8 @@ class NavigationNotificationListener : NotificationListenerService() {
 
         if (maxCol <= 0) return listOf(candidate)
         val activeThreshold = maxOf(1, (maxCol * 0.15f).toInt())
-        val minSegWidth = maxOf(10, (bmp.width * 0.07f).toInt())
-        val maxGap = maxOf(3, (bmp.width * 0.02f).toInt())
+val minSegWidth = maxOf(8, (bmp.width * 0.045f).toInt())
+val maxGap = maxOf(4, (bmp.width * 0.03f).toInt())
 
         val segments = mutableListOf<IntRange>()
         var start = -1
@@ -712,29 +712,49 @@ class NavigationNotificationListener : NotificationListenerService() {
             if (maneuverOrdinal == null) null else preview.indexOfFirst { it.ordinal == maneuverOrdinal }.takeIf { it >= 0 }
     }
 
-    private fun collectArrowImageCandidates(view: android.view.View, out: MutableList<ArrowCandidate>) {
-        // If this is an ImageView, check if it contains an arrow-like icon
-        if (view is android.widget.ImageView) {
-            val drawable = view.drawable
-            if (drawable != null) {
-                val bitmap = ImageUtils.drawableToBitmap(drawable)
-                if (bitmap != null) {
-                    val width = bitmap.width
-                    val height = bitmap.height
+private fun collectArrowImageCandidates(view: android.view.View, out: MutableList<ArrowCandidate>) {
+    if (view is android.widget.ImageView) {
+        val drawable = view.drawable
+        if (drawable != null) {
+            val bitmap = ImageUtils.drawableToBitmap(drawable)
+            if (bitmap != null) {
+                val width = bitmap.width
+                val height = bitmap.height
 
-                    if (width > 30 && height > 30 && width < 500 && height < 500) {
-                        val aspectRatio = width.toFloat() / height.toFloat()
-                        if (aspectRatio in 0.5f..2.0f) {
-                            val rect = android.graphics.Rect()
-                            val hasRect = view.getGlobalVisibleRect(rect)
-                            val bounds = if (hasRect) rect else android.graphics.Rect(0, 0, 0, 0)
-                            DebugLog.d(TAG, "Found potential arrow ImageView: ${width}x${height} @ $bounds")
-                            out.add(ArrowCandidate(bitmap, bounds, out.size))
-                        }
+                if (width > 20 && height > 20 && width < 1200 && height < 600) {
+                    val aspectRatio = width.toFloat() / height.toFloat()
+
+                    val acceptable =
+                        aspectRatio in 0.35f..5.5f ||
+                        (width >= 120 && aspectRatio >= 2.0f)
+
+                    if (acceptable) {
+                        val rect = android.graphics.Rect()
+                        val hasRect = view.getGlobalVisibleRect(rect)
+                        val bounds = if (hasRect) rect else android.graphics.Rect(0, 0, 0, 0)
+
+                        DebugLog.d(
+                            TAG,
+                            "Found arrow/lane candidate: ${width}x${height}, ratio=${"%.2f".format(aspectRatio)} @ $bounds"
+                        )
+
+                        out.add(ArrowCandidate(bitmap, bounds, out.size))
+                    } else {
+                        if (!bitmap.isRecycled) bitmap.recycle()
                     }
+                } else {
+                    if (!bitmap.isRecycled) bitmap.recycle()
                 }
             }
         }
+    }
+
+    if (view is android.view.ViewGroup) {
+        for (i in 0 until view.childCount) {
+            collectArrowImageCandidates(view.getChildAt(i), out)
+        }
+    }
+}
 
         // Recursively search children
         if (view is android.view.ViewGroup) {
