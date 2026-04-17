@@ -13,7 +13,7 @@ import app.akexorcist.bluetotohspp.library.DeviceList
 /**
  * Упрощенная реализация протокола Garmin HUD для тестирования
  */
-class GarminHudLite(private val context: Context) {
+class GarminHudLite(private val context: Context) : HudEngine {
     
     companion object {
         private const val TAG = "GarminHudLite"
@@ -28,7 +28,7 @@ class GarminHudLite(private val context: Context) {
     private var connectedDeviceName: String? = null
     private var connectedDeviceAddress: String? = null
     
-    var onConnectionStateChanged: ((Boolean, String?) -> Unit)? = null
+    override var onConnectionStateChanged: ((Boolean, String?) -> Unit)? = null
     
     init {
         // Не инициализируем Bluetooth сразу, чтобы избежать ошибок разрешений
@@ -36,7 +36,7 @@ class GarminHudLite(private val context: Context) {
     
     private var isConnecting = false
     
-    fun initBluetooth() {
+    override fun initBluetooth() {
         if (bt != null) return
         
         bt = BluetoothSPP(context)
@@ -76,7 +76,7 @@ class GarminHudLite(private val context: Context) {
         }
     }
     
-    fun connectToDevice(address: String) {
+    override fun connectToDevice(address: String) {
         if (isConnecting || isConnected()) {
             Log.d(TAG, "Already connecting or connected, ignoring connect request")
             return
@@ -87,7 +87,7 @@ class GarminHudLite(private val context: Context) {
         bt?.connect(address)
     }
     
-    fun scanForDevice() {
+    override fun scanForDevice() {
         initBluetooth()
         
         if (bt?.isBluetoothAvailable == false) {
@@ -100,7 +100,7 @@ class GarminHudLite(private val context: Context) {
         (context as Activity).startActivityForResult(intent, BluetoothState.REQUEST_CONNECT_DEVICE)
     }
     
-    fun handleActivityResult(requestCode: Int, resultCode: Int, data: Intent?): Boolean {
+    override fun handleActivityResult(requestCode: Int, resultCode: Int, data: Intent?): Boolean {
         return when (requestCode) {
             BluetoothState.REQUEST_CONNECT_DEVICE -> {
                 if (resultCode == Activity.RESULT_OK && data != null) {
@@ -121,16 +121,16 @@ class GarminHudLite(private val context: Context) {
         }
     }
     
-    fun disconnect() {
+    override fun disconnect() {
         bt?.stopAutoConnect()
         bt?.stopService()
         connected = false
     }
     
-    fun isConnected(): Boolean = connected
+    override fun isConnected(): Boolean = connected
     
-    fun getConnectedDeviceName(): String? = connectedDeviceName
-    fun getConnectedDeviceAddress(): String? = connectedDeviceAddress
+    override fun getConnectedDeviceName(): String? = connectedDeviceName
+    override fun getConnectedDeviceAddress(): String? = connectedDeviceAddress
     
     // ========== Протокол Garmin HUD ==========
     
@@ -216,7 +216,7 @@ class GarminHudLite(private val context: Context) {
     /**
      * Установить время
      */
-    fun setTime(hour: Int, minute: Int) {
+    override fun setTime(hour: Int, minute: Int) {
         val arr = charArrayOf(
             0x05.toChar(),              // Command: Time
             0x00.toChar(),              // Traffic flag
@@ -230,13 +230,28 @@ class GarminHudLite(private val context: Context) {
         )
         sendToHud(arr)
     }
+
+    override fun setTimeRaw(traffic: Int, h1: Int, h2: Int, colon: Int, m1: Int, m2: Int, flag: Int) {
+        val arr = charArrayOf(
+            0x05.toChar(),
+            traffic.toChar(),
+            h1.toChar(),
+            h2.toChar(),
+            colon.toChar(),
+            m1.toChar(),
+            m2.toChar(),
+            flag.toChar(),
+            0x00.toChar()
+        )
+        sendToHud(arr)
+    }
     
     /**
      * Установить направление (стрелку)
      * @param type: 0x01=Lane, 0x02=LongerLane, 0x04=LeftRoundabout, 0x08=RightRoundabout, 0x80=ArrowOnly
      * @param angle: 0x10=Straight, 0x20=EasyLeft, 0x40=Left, 0x80=SharpLeft...
      */
-    fun setDirection(type: Int, angle: Int) {
+    override fun setDirection(type: Int, angle: Int) {
         val arr = charArrayOf(
             0x01.toChar(),  // Command: Direction
             type.toChar(),  // Type
@@ -247,11 +262,57 @@ class GarminHudLite(private val context: Context) {
     }
 
     /**
-     * Shortcut for Simple Arrow
+     * Shortcut for Simple Arrow.
+     * Accepts either protocol angle masks (0x10, 0x40, ...) or legacy arrow codes (0..8).
      */
-    fun setArrow(angle: Int) {
-        setDirection(0x80, angle)
+    override fun setArrow(angle: Int) {
+        val protocolAngle = if (angle in 0..8) legacyArrowCodeToProtocolAngle(angle) else angle
+        setDirection(0x80, protocolAngle)
     }
+
+    override fun setLanes(arrowMask: Int, outlineMask: Int) {
+        val normalizedOutline = outlineMask and 0x7E
+        val normalizedArrow = arrowMask and 0x7E
+        val arr = charArrayOf(
+            0x02.toChar(),
+            normalizedOutline.toChar(),
+            normalizedArrow.toChar()
+        )
+        sendToHud(arr)
+    }
+
+    override fun showCameraIcon() {
+        setSpeedWithLimit(0, null, false, true)
+    }
+
+    override fun showGpsLabel() {
+        setGpsLabelEnabled(true)
+    }
+
+    override fun setGpsLabelEnabled(enabled: Boolean) {
+        val arr = charArrayOf(
+            0x07.toChar(),
+            if (enabled) 0x01.toChar() else 0x00.toChar()
+        )
+        sendToHud(arr)
+    }
+
+    private fun legacyArrowCodeToProtocolAngle(code: Int): Int {
+        return when (code) {
+            0 -> 0x10 // STRAIGHT
+            1 -> 0x40 // LEFT
+            2 -> 0x20 // EASY_LEFT
+            3 -> 0x08 // EASY_RIGHT
+            4 -> 0x20 // KEEP_LEFT (closest HUD representation)
+            5 -> 0x08 // KEEP_RIGHT (closest HUD representation)
+            6 -> 0x04 // RIGHT
+            7 -> 0x80 // SHARP_LEFT
+            8 -> 0x02 // SHARP_RIGHT
+            else -> 0x10
+        }
+    }
+
+    fun legacyArrowCodeToProtocolAnglePublic(code: Int): Int = legacyArrowCodeToProtocolAngle(code)
     
     /**
      * Установить скорость
@@ -282,7 +343,7 @@ class GarminHudLite(private val context: Context) {
      * @param speedLimit лимит скорости (если null, то лимит не отображается)
      * @param showSpeedingIcon показывать ли иконку превышения скорости
      */
-    fun setSpeedWithLimit(currentSpeed: Int, speedLimit: Int?, showSpeedingIcon: Boolean = false, showCameraIcon: Boolean = false) {
+    override fun setSpeedWithLimit(currentSpeed: Int, speedLimit: Int?, showSpeedingIcon: Boolean, showCameraIcon: Boolean) {
         val speedHundreds = ((currentSpeed / 100) % 10).toChar()
         val speedTens = if (currentSpeed < 10) 0.toChar() else toDigit(currentSpeed / 10)
         val speedOnes = toDigit(currentSpeed)
@@ -325,7 +386,7 @@ class GarminHudLite(private val context: Context) {
     /**
      * Установить расстояние (целое число)
      */
-    fun setDistance(distance: Int, unit: Int = 1) {
+    override fun setDistance(distance: Int, unit: Int) {
         val arr = charArrayOf(
             0x03.toChar(),              // Command: Distance
             toDigit(distance / 1000),   // Thousands
@@ -409,7 +470,7 @@ class GarminHudLite(private val context: Context) {
         sendToHud(arr)
     }
     
-    fun clearDistance() {
+    override fun clearDistance() {
         sendToHud(charArrayOf(
             0x03.toChar(), 0x00.toChar(), 0x00.toChar(), 0x00.toChar(),
             0x00.toChar(), 0x00.toChar(), 0x00.toChar()
@@ -437,7 +498,7 @@ class GarminHudLite(private val context: Context) {
      * Установить яркость
      * @param brightness: 0 = Auto, 1-10 = Manual levels
      */
-    fun setBrightness(brightness: Int) {
+    override fun setBrightness(level: Int) {
         // 0x04 = Brightness command
         // 0x00 = Unused?
         // 0x00 = Unused?
@@ -458,18 +519,28 @@ class GarminHudLite(private val context: Context) {
         // Actually, often it's just setting it to a value. 
         // Let's try implementing basic level setting.
         
-        val level = when {
-            brightness <= 0 -> 0 // Auto? Or min?
-            brightness > 10 -> 10
-            else -> brightness
+        val resolvedLevel = when {
+            level <= 0 -> 0 // Auto? Or min?
+            level > 10 -> 10
+            else -> level
         }
         
         val arr = charArrayOf(
             0x04.toChar(),
             0x00.toChar(),
             0x00.toChar(),
-            level.toChar()
+            resolvedLevel.toChar()
         )
         sendToHud(arr)
+    }
+
+    fun sendRawPacket(packet: ByteArray): Boolean {
+        if (!isUpdatable() || bt?.isServiceAvailable != true) {
+            return false
+        }
+
+        updateCount++
+        bt?.send(packet, false)
+        return true
     }
 }

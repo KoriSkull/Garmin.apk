@@ -3,7 +3,9 @@
     xmlns:app="http://schemas.android.com/apk/res-auto"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
-    android:padding="16dp">
+    android:padding="16dp"
+    android:fitsSystemWindows="true"
+    android:clipToPadding="false">
 
     <LinearLayout
         android:layout_width="match_parent"
@@ -184,6 +186,58 @@
                 android:layout_marginBottom="8dp" />
 
             <TextView
+                android:id="@+id/navLaneMask"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="Lane Mask: -"
+                android:textSize="12sp"
+                android:fontFamily="monospace"
+                android:layout_marginBottom="4dp" />
+
+            <TextView
+                android:id="@+id/navLaneCandidates"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="Lane Candidates: -"
+                android:textSize="12sp"
+                android:fontFamily="monospace"
+                android:layout_marginBottom="4dp" />
+
+            <TextView
+                android:id="@+id/navLanePayload"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="Lane Payload: -"
+                android:textSize="12sp"
+                android:fontFamily="monospace"
+                android:layout_marginBottom="4dp" />
+
+            <TextView
+                android:id="@+id/navLaneBeforeExclusion"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="Lane Before Exclusion: -"
+                android:textSize="12sp"
+                android:fontFamily="monospace"
+                android:layout_marginBottom="4dp" />
+
+            <TextView
+                android:id="@+id/navLaneAfterExclusion"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="Lane After Exclusion: -"
+                android:textSize="12sp"
+                android:fontFamily="monospace"
+                android:layout_marginBottom="6dp" />
+
+            <Button
+                android:id="@+id/btnToggleLaneExclusion"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="Lane Exclusion: ON"
+                android:layout_marginBottom="8dp" />
+
+            <TextView
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:text="Extracted Arrow Image:"
@@ -200,7 +254,20 @@
                 android:layout_gravity="center_horizontal"
                 android:background="#DDDDDD"
                 android:scaleType="fitCenter"
-                android:layout_marginBottom="16dp" />
+                android:layout_marginBottom="8dp" />
+
+            <HorizontalScrollView
+                android:id="@+id/navArrowScroll"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginBottom="16dp">
+
+                <LinearLayout
+                    android:id="@+id/navArrowGallery"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:orientation="horizontal" />
+            </HorizontalScrollView>
 
             <!-- Virtual HUD Preview -->
             <TextView
@@ -508,6 +575,47 @@
                 android:textColor="#FFFFFF"/>
         </LinearLayout>
 
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="HUD Library Icons/Symbols"
+            android:textSize="18sp"
+            android:textStyle="bold"
+            android:background="#D1C4E9"
+            android:padding="8dp"
+            android:layout_marginBottom="8dp" />
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical"
+            android:background="#F5F5F5"
+            android:padding="12dp"
+            android:layout_marginBottom="16dp">
+
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="Select any icon/symbol from HudIcon library and send it to Bluetooth HUD"
+                android:textSize="12sp"
+                android:fontFamily="monospace"
+                android:layout_marginBottom="8dp" />
+
+            <Spinner
+                android:id="@+id/spinnerHudIcons"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginBottom="8dp" />
+
+            <Button
+                android:id="@+id/btnSendHudIcon"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="Send Selected Icon/Symbol to HUD"
+                android:backgroundTint="#7E57C2"
+                android:textColor="#FFFFFF" />
+        </LinearLayout>
+
         <!-- HUD Debug Section -->
         <TextView
             android:layout_width="match_parent"
@@ -597,6 +705,271 @@
                 android:text="Last Update: -"
                 android:textSize="12sp"
                 android:fontFamily="monospace" />
+        </LinearLayout>
+
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical"
+            android:background="#ECEFF1"
+            android:padding="12dp"
+            android:layout_marginBottom="16dp">
+
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="Manual HUD Direction (Bluetooth)"
+                android:textStyle="bold"
+                android:layout_marginBottom="8dp" />
+
+            <EditText
+                android:id="@+id/inputManualType"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:hint="Type (e.g. 128 or 0x80)"
+                android:inputType="text"
+                android:singleLine="true"
+                android:layout_marginBottom="8dp" />
+
+            <EditText
+                android:id="@+id/inputManualAngle"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:hint="Angle (e.g. 64 or 0x40)"
+                android:inputType="text"
+                android:singleLine="true"
+                android:layout_marginBottom="8dp" />
+
+            <Button
+                android:id="@+id/btnSendManualDirection"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="Send Type/Angle to HUD"
+                android:backgroundTint="#607D8B"
+                android:textColor="#FFFFFF" />
+        </LinearLayout>
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical"
+            android:background="#E0F7FA"
+            android:padding="12dp"
+            android:layout_marginBottom="16dp">
+
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="ShowGpsLabel(bool bShow)"
+                android:textStyle="bold"
+                android:layout_marginBottom="8dp" />
+
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="Payload: 07 01 for true, 07 00 for false"
+                android:textSize="12sp"
+                android:fontFamily="monospace"
+                android:layout_marginBottom="4dp" />
+
+            <EditText
+                android:id="@+id/inputGpsLabelFlag"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:hint="true or false"
+                android:text="true"
+                android:inputType="text"
+                android:singleLine="true"
+                android:layout_marginBottom="8dp" />
+
+            <Button
+                android:id="@+id/btnSendGpsLabelFlag"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="Send ShowGpsLabel Flag"
+                android:backgroundTint="#00838F"
+                android:textColor="#FFFFFF" />
+        </LinearLayout>
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical"
+            android:background="#F3E5F5"
+            android:padding="12dp"
+            android:layout_marginBottom="16dp">
+
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="Manual SetTime payload"
+                android:textStyle="bold"
+                android:layout_marginBottom="6dp" />
+
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="Fixed bytes: 0x05 ... 0x00. Select traffic/h1/h2/colon/m1/m2/flag."
+                android:textSize="12sp"
+                android:fontFamily="monospace"
+                android:layout_marginBottom="8dp" />
+
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="traffic" />
+            <Spinner
+                android:id="@+id/spinnerSetTimeTraffic"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginBottom="6dp" />
+
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="h1" />
+            <Spinner
+                android:id="@+id/spinnerSetTimeH1"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginBottom="6dp" />
+
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="h2" />
+            <Spinner
+                android:id="@+id/spinnerSetTimeH2"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginBottom="6dp" />
+
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="colon" />
+            <Spinner
+                android:id="@+id/spinnerSetTimeColon"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginBottom="6dp" />
+
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="m1" />
+            <Spinner
+                android:id="@+id/spinnerSetTimeM1"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginBottom="6dp" />
+
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="m2" />
+            <Spinner
+                android:id="@+id/spinnerSetTimeM2"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginBottom="6dp" />
+
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="flag" />
+            <Spinner
+                android:id="@+id/spinnerSetTimeFlag"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginBottom="8dp" />
+
+            <Button
+                android:id="@+id/btnSendSetTimeRaw"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="Send SetTime payload"
+                android:backgroundTint="#7B1FA2"
+                android:textColor="#FFFFFF" />
+        </LinearLayout>
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical"
+            android:background="#E8EAF6"
+            android:padding="12dp"
+            android:layout_marginBottom="16dp">
+
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="Manual eLane (Lane Masks)"
+                android:textStyle="bold"
+                android:layout_marginBottom="8dp" />
+
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="Arrow Mask (active lane)"
+                android:textSize="12sp"
+                android:fontFamily="monospace"
+                android:layout_marginBottom="4dp" />
+
+            <Spinner
+                android:id="@+id/spinnerLaneArrow"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginBottom="8dp" />
+
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="Outline Mask (all visible lanes)"
+                android:textSize="12sp"
+                android:fontFamily="monospace"
+                android:layout_marginBottom="4dp" />
+
+            <Spinner
+                android:id="@+id/spinnerLaneOutline"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginBottom="8dp" />
+
+            <Button
+                android:id="@+id/btnSendLaneMasks"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="Send eLane Masks to HUD"
+                android:backgroundTint="#3949AB"
+                android:textColor="#FFFFFF"
+                android:layout_marginBottom="10dp" />
+
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="SetLanes string (up to 6 chars: 0/1/space; auto-normalized). Example: 010011 -> payload 02 7E 26"
+                android:textSize="12sp"
+                android:fontFamily="monospace"
+                android:layout_marginBottom="4dp" />
+
+            <EditText
+                android:id="@+id/inputLaneBinary"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:hint="010011"
+                android:inputType="text"
+                android:singleLine="true"
+                android:layout_marginBottom="8dp" />
+
+            <Button
+                android:id="@+id/btnSendLaneString"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="Send SetLanes(String)"
+                android:backgroundTint="#5C6BC0"
+                android:textColor="#FFFFFF" />
         </LinearLayout>
 
         <Button
