@@ -319,6 +319,23 @@ class DebugActivity : AppCompatActivity() {
             ).show()
         }
 
+        findViewById<Button>(R.id.btnSendCameraIcon).setOnClickListener {
+            if (!hud.isConnected()) {
+                val started = tryConnectSavedHud(showToastOnFail = true)
+                if (started) {
+                    android.widget.Toast.makeText(this, "Connecting to HUD... tap send again", android.widget.Toast.LENGTH_SHORT).show()
+                }
+                return@setOnClickListener
+            }
+
+            hud.showCameraIcon()
+            android.widget.Toast.makeText(
+                this,
+                "Sent ShowCameraIcon payload 04 01",
+                android.widget.Toast.LENGTH_SHORT
+            ).show()
+        }
+
         updateDebugInfo()
     }
 
