@@ -1,25 +1,21 @@
+
 package iMel9i.garminhud.lite
 
 import android.service.notification.NotificationListenerService
 import android.service.notification.StatusBarNotification
 import android.util.Log
 import kotlin.math.abs
-import kotlin.math.round
+import kotlin.math.min
 
-/**
- * Служба для мониторинга уведомлений от приложений навигации
- * (Google Maps, Yandex Maps, Yandex Navigator)
- */
 class NavigationNotificationListener : NotificationListenerService() {
 
     companion object {
         private const val TAG = "NavNotifListener"
         private const val PREFS_NAME = "HudPrefs"
-        private const val KEY_LANE_EXCLUSION = "lane_exclusion_enabled"
 
         var instance: NavigationNotificationListener? = null
         var onNavigationUpdate: ((NavigationData) -> Unit)? = null
-        var enabled = true // ВКЛЮЧЕНО по умолчанию, так как AccessibilityService screenshot не работает
+        var enabled = true
     }
 
     data class NavigationData(
@@ -63,6 +59,12 @@ class NavigationNotificationListener : NotificationListenerService() {
         val aspectPenalty: Double,
         val positionScore: Double,
         val totalScore: Double
+    )
+
+    private data class LogicalLane(
+        val candidate: ArrowCandidate,
+        val metrics: ArrowMetrics,
+        val whitenessScore: Double
     )
 
     override fun onCreate() {
@@ -117,6 +119,10 @@ class NavigationNotificationListener : NotificationListenerService() {
         if (config != null) {
             DebugLog.i(TAG, "Navigation notification removed from: $packageName")
             onNavigationUpdate?.invoke(NavigationData(isNavigating = false))
+            lastDetectedLaneMask = null
+            HudState.laneAssist = null
+            HudService.navDebug.laneMask = "-"
+            HudState.notifyUpdate()
         }
     }
 
@@ -124,13 +130,10 @@ class NavigationNotificationListener : NotificationListenerService() {
         val notification = sbn.notification
         val extras = notification.extras
 
-        DebugLog.i(TAG, "=== PARSING NOTIFICATION FROM ${sbn.packageName} ===")
-
         val allExtras = mutableMapOf<String, String>()
         extras.keySet().forEach { key ->
             val value = extras.get(key)
             allExtras[key] = value?.toString() ?: "null"
-            DebugLog.d(TAG, "  Extra: $key = $value")
         }
 
         val title = extras.getCharSequence("android.title")?.toString()
@@ -236,10 +239,8 @@ class NavigationNotificationListener : NotificationListenerService() {
         HudService.navDebug.laneExclusionEnabled = false
 
         if (largeIcon != null) {
-            Log.d(TAG, "Found LargeIcon in notification: ${largeIcon.width}x${largeIcon.height}")
             arrowBitmap = largeIcon
         } else if (picture != null) {
-            Log.d(TAG, "Found Picture in notification: ${picture.width}x${picture.height}")
             arrowBitmap = picture
         } else {
             arrowBitmap = extractBitmapFromRemoteViews(notification, sbn.packageName)
@@ -249,16 +250,13 @@ class NavigationNotificationListener : NotificationListenerService() {
             HudService.navDebug.lastArrowBitmap = arrowBitmap
             val arrowImage = ArrowImage(arrowBitmap)
             val hash = arrowImage.getArrowValue()
-            Log.d(TAG, "Arrow Hash: $hash")
 
             val arrow = ArrowDirection.recognize(arrowImage)
             if (arrow != ArrowDirection.NONE) {
                 HudState.turnIcon = arrow.hudCode
                 HudService.navDebug.arrowStatus = "Recognized: ${arrow.name} ($hash)"
-                Log.d(TAG, "Recognized arrow: $arrow")
             } else {
                 HudService.navDebug.arrowStatus = "Not Recognized ($hash)"
-                Log.d(TAG, "Arrow not recognized, hash: $hash")
             }
         } else {
             HudService.navDebug.lastArrowBitmap = null
@@ -266,7 +264,6 @@ class NavigationNotificationListener : NotificationListenerService() {
                 val arrow = parseTextToArrow(instruction)
                 if (arrow != ArrowDirection.NONE) {
                     HudState.turnIcon = arrow.hudCode
-                    Log.d(TAG, "Parsed arrow from text '$instruction': $arrow")
                 }
             }
         }
@@ -274,12 +271,12 @@ class NavigationNotificationListener : NotificationListenerService() {
         HudState.laneAssist = lastDetectedLaneMask
         HudService.navDebug.laneCandidates = lastLaneCandidatesInfo
         HudService.navDebug.laneMask = lastDetectedLaneMask ?: "-"
+        HudState.notifyUpdate()
 
         HudService.navDebug.parsedInstruction = instruction ?: ""
         HudService.navDebug.parsedDistance = distance ?: ""
         HudService.navDebug.parsedEta = eta ?: ""
 
-        Log.d(TAG, "Parsed navigation data: $navData")
         onNavigationUpdate?.invoke(navData)
         HudState.notifyUpdate()
     }
@@ -305,27 +302,17 @@ class NavigationNotificationListener : NotificationListenerService() {
     ): android.graphics.Bitmap? {
         try {
             val views = notification.bigContentView ?: notification.contentView ?: return null
-
-            DebugLog.i(TAG, "Attempting to extract bitmap from RemoteViews by applying to View")
-
             val inflatedView = views.apply(this, null)
 
             val candidates = mutableListOf<ArrowCandidate>()
             collectArrowImageCandidates(inflatedView, candidates)
 
             if (candidates.isEmpty()) {
-                DebugLog.w(TAG, "Could not find arrow ImageView in notification")
+                lastDetectedLaneMask = null
+                HudState.laneAssist = null
+                HudService.navDebug.laneMask = "-"
+                HudState.notifyUpdate()
                 return null
-            }
-
-            DebugLog.i(TAG, "Arrow candidates found: ${candidates.size}")
-            candidates.forEachIndexed { index, candidate ->
-                val aspect = candidate.bitmap.width.toFloat() / candidate.bitmap.height.toFloat()
-                DebugLog.i(
-                    TAG,
-                    "Candidate[$index]: bmp=${candidate.bitmap.width}x${candidate.bitmap.height}, " +
-                        "bounds=${candidate.bounds}, aspect=${"%.2f".format(aspect)}, synthetic=${candidate.syntheticBounds}"
-                )
             }
 
             val wideLaneSource = candidates
@@ -336,38 +323,19 @@ class NavigationNotificationListener : NotificationListenerService() {
                 .maxByOrNull { it.bitmap.width }
 
             val laneCandidates = if (wideLaneSource != null) {
-                DebugLog.i(
-                    TAG,
-                    "Lane source selected: ${wideLaneSource.bitmap.width}x${wideLaneSource.bitmap.height}, bounds=${wideLaneSource.bounds}"
-                )
                 splitCompositeLaneBitmap(wideLaneSource, packageName)
             } else {
-                DebugLog.i(TAG, "Lane source fallback: using expanded general candidates")
                 expandLaneCandidates(candidates, packageName)
             }
-
-            DebugLog.i(TAG, "Expanded lane candidates: ${laneCandidates.size}")
 
             val arrowCandidates = candidates.filter {
                 val aspect = it.bitmap.width.toFloat() / it.bitmap.height.toFloat()
                 aspect in 0.45f..1.45f
             }
 
-            DebugLog.i(TAG, "Arrow candidates for maneuver arrow: ${arrowCandidates.size}")
-
             val scored = arrowCandidates.map { candidate ->
                 candidate to calculateArrowMetrics(candidate, packageName)
             }.sortedByDescending { it.second.totalScore }
-
-            scored.forEachIndexed { index, (candidate, metrics) ->
-                DebugLog.i(
-                    TAG,
-                    "ScoredArrow[$index]: bmp=${candidate.bitmap.width}x${candidate.bitmap.height}, " +
-                        "bounds=${candidate.bounds}, white=${"%.3f".format(metrics.whiteRatio)}, " +
-                        "fg=${"%.3f".format(metrics.foregroundRatio)}, comp=${"%.3f".format(metrics.componentDominance)}, " +
-                        "score=${"%.3f".format(metrics.totalScore)}"
-                )
-            }
 
             val laneScored = laneCandidates.map { candidate ->
                 candidate to calculateArrowMetrics(candidate, packageName)
@@ -376,33 +344,20 @@ class NavigationNotificationListener : NotificationListenerService() {
             val maneuverCandidateOrdinal = scored.firstOrNull()?.first?.ordinal
             updateRecognizedArrowsDebug(scored, maneuverCandidateOrdinal)
 
-            val laneResultBeforeExclusion = detectLaneMask(laneScored, candidates.size, laneCandidates.size)
-            val laneResultAfterExclusion = laneResultBeforeExclusion
-            val laneResult = laneResultBeforeExclusion
+            val laneResult = detectLaneMask(laneScored, candidates.size, laneCandidates.size)
 
             lastDetectedLaneMask = laneResult?.mask
             lastLaneCandidatesInfo = laneResult?.let {
-                "source=${it.sourceCandidates}, expanded=${it.expandedCandidates}, raw=${it.rawCandidates}, row=${it.rowCandidates}, slotted=${it.slottedCandidates}, white=${it.whiteCount}, gray=${it.grayCount}, side=${it.whiteSide}, exclusion=forced_off"
-            } ?: "source=${candidates.size}, expanded=${laneCandidates.size}, raw=0, row=0, slotted=0, white=0, gray=0, side=none, exclusion=forced_off"
+                "source=${it.sourceCandidates}, expanded=${it.expandedCandidates}, raw=${it.rawCandidates}, row=${it.rowCandidates}, slotted=${it.slottedCandidates}, white=${it.whiteCount}, gray=${it.grayCount}, side=${it.whiteSide}"
+            } ?: "source=${candidates.size}, expanded=${laneCandidates.size}, raw=0, row=0, slotted=0, white=0, gray=0, side=none"
 
+            HudState.laneAssist = lastDetectedLaneMask
             HudService.navDebug.laneCandidates = lastLaneCandidatesInfo
             HudService.navDebug.laneMask = lastDetectedLaneMask ?: "-"
-            HudService.navDebug.laneMaskBeforeExclusion = laneResultBeforeExclusion?.mask ?: "-"
-            HudService.navDebug.laneMaskAfterExclusion = laneResultAfterExclusion?.mask ?: "-"
+            HudService.navDebug.laneMaskBeforeExclusion = lastDetectedLaneMask ?: "-"
+            HudService.navDebug.laneMaskAfterExclusion = lastDetectedLaneMask ?: "-"
             HudService.navDebug.laneExclusionEnabled = false
-            HudService.navDebug.maneuverArrowOrdinal = null
-
-            scored.take(3).forEachIndexed { i, (candidate, metrics) ->
-                DebugLog.d(
-                    TAG,
-                    "TopArrow${i + 1}: ${candidate.bitmap.width}x${candidate.bitmap.height}, " +
-                        "white=${"%.3f".format(metrics.whiteRatio)}, " +
-                        "comp=${"%.3f".format(metrics.componentDominance)}, " +
-                        "pos=${"%.3f".format(metrics.positionScore)}, " +
-                        "score=${"%.3f".format(metrics.totalScore)}"
-                )
-                saveCandidateDebugBitmap(candidate.bitmap, i + 1, metrics.totalScore)
-            }
+            HudState.notifyUpdate()
 
             val bestBitmap = scored.firstOrNull()?.first?.bitmap
             if (bestBitmap != null) {
@@ -416,6 +371,10 @@ class NavigationNotificationListener : NotificationListenerService() {
             e.printStackTrace()
         }
 
+        lastDetectedLaneMask = null
+        HudState.laneAssist = null
+        HudService.navDebug.laneMask = "-"
+        HudState.notifyUpdate()
         return null
     }
 
@@ -428,9 +387,7 @@ class NavigationNotificationListener : NotificationListenerService() {
         source.forEach { candidate ->
             val splits = splitCompositeLaneBitmap(candidate, packageName)
             if (splits.size > 1) {
-                splits.forEach {
-                    result.add(it.copy(ordinal = nextId++))
-                }
+                splits.forEach { result.add(it.copy(ordinal = nextId++)) }
             } else {
                 result.add(candidate.copy(ordinal = nextId++))
             }
@@ -443,25 +400,32 @@ class NavigationNotificationListener : NotificationListenerService() {
         packageName: String
     ): List<ArrowCandidate> {
         val bmp = candidate.bitmap
-        if (bmp.width < 80 || bmp.height < 18) return listOf(candidate)
-        val aspect = bmp.width.toFloat() / bmp.height.toFloat()
-        if (aspect < 1.6f) return listOf(candidate)
+        if (bmp.width < 50 || bmp.height < 14) return listOf(candidate)
 
-        val (minV, maxS) = when {
-            packageName.startsWith("ru.yandex") -> 0.74f to 0.30f
-            packageName.contains("google") -> 0.80f to 0.24f
-            else -> 0.76f to 0.28f
-        }
+        val aspect = bmp.width.toFloat() / bmp.height.toFloat()
+        if (aspect < 1.25f) return listOf(candidate)
+
+        val sourceLeft = candidate.bounds.left
+        val sourceTop = candidate.bounds.top
+        val sourceW = candidate.bounds.width().coerceAtLeast(1)
+        val sourceH = candidate.bounds.height().coerceAtLeast(1)
 
         val col = IntArray(bmp.width)
         var maxCol = 0
+
         for (x in 0 until bmp.width) {
             var count = 0
             var y = 0
             while (y < bmp.height) {
                 val p = bmp.getPixel(x, y)
-                if (isArrowForegroundPixel(p, alphaThreshold = 30)) {
-                    count++
+                val a = (p ushr 24) and 0xFF
+                if (a > 30) {
+                    val r = (p shr 16) and 0xFF
+                    val g = (p shr 8) and 0xFF
+                    val b = p and 0xFF
+                    if (r + g + b >= 120) {
+                        count++
+                    }
                 }
                 y += 1
             }
@@ -470,13 +434,15 @@ class NavigationNotificationListener : NotificationListenerService() {
         }
 
         if (maxCol <= 0) return listOf(candidate)
-        val activeThreshold = maxOf(1, (maxCol * 0.15f).toInt())
-        val minSegWidth = maxOf(8, (bmp.width * 0.045f).toInt())
-        val maxGap = maxOf(4, (bmp.width * 0.03f).toInt())
+
+        val activeThreshold = Math.max(1, (maxCol * 0.08f).toInt())
+        val minSegWidth = Math.max(4, (bmp.width * 0.02f).toInt())
+        val maxGap = Math.max(6, (bmp.width * 0.05f).toInt())
 
         val segments = mutableListOf<IntRange>()
         var start = -1
         var gap = 0
+
         for (x in 0 until bmp.width) {
             val active = col[x] >= activeThreshold
             if (active) {
@@ -492,34 +458,81 @@ class NavigationNotificationListener : NotificationListenerService() {
                 }
             }
         }
+
         if (start >= 0) {
             val end = bmp.width - 1
             if (end - start + 1 >= minSegWidth) segments.add(start..end)
         }
 
-        if (segments.size < 2) return listOf(candidate)
+        if (segments.size < 2) {
+            val fallbackAllowed =
+                bmp.width >= 180 &&
+                    bmp.height >= 18 &&
+                    (bmp.width.toFloat() / bmp.height.toFloat()) >= 2.2f
+
+            if (!fallbackAllowed) {
+                return listOf(candidate)
+            }
+
+            val estimatedLanes = 3
+            val partWidth = bmp.width / estimatedLanes
+            if (partWidth >= 8) {
+                val fallbackOut = mutableListOf<ArrowCandidate>()
+
+                for (idx in 0 until estimatedLanes) {
+                    val left = idx * partWidth
+                    val right = if (idx == estimatedLanes - 1) bmp.width else (idx + 1) * partWidth
+                    val w = Math.max(right - left, 1)
+
+                    val sub = android.graphics.Bitmap.createBitmap(bmp, left, 0, w, bmp.height)
+
+                    val relLeft = left.toFloat() / bmp.width.toFloat()
+                    val relRight = right.toFloat() / bmp.width.toFloat()
+                    val mappedLeft = sourceLeft + (sourceW * relLeft).toInt()
+                    val mappedRight = sourceLeft + (sourceW * relRight).toInt()
+
+                    val segRect = android.graphics.Rect(
+                        mappedLeft,
+                        sourceTop,
+                        Math.max(mappedRight, mappedLeft + 1),
+                        sourceTop + sourceH
+                    )
+
+                    fallbackOut.add(
+                        ArrowCandidate(
+                            bitmap = sub,
+                            bounds = segRect,
+                            ordinal = idx,
+                            syntheticBounds = candidate.syntheticBounds
+                        )
+                    )
+                }
+
+                return fallbackOut
+            }
+
+            return listOf(candidate)
+        }
 
         val out = mutableListOf<ArrowCandidate>()
-        val sourceLeft = candidate.bounds.left
-        val sourceTop = candidate.bounds.top
-        val sourceW = candidate.bounds.width().coerceAtLeast(1)
-        val sourceH = candidate.bounds.height().coerceAtLeast(1)
 
         segments.forEachIndexed { idx, seg ->
             val pad = 2
-            val left = (seg.first - pad).coerceAtLeast(0)
-            val right = (seg.last + pad).coerceAtMost(bmp.width - 1)
-            val w = (right - left + 1).coerceAtLeast(1)
+            val left = Math.max(seg.first - pad, 0)
+            val right = Math.min(seg.last + pad, bmp.width - 1)
+            val w = Math.max(right - left + 1, 1)
+
             val sub = android.graphics.Bitmap.createBitmap(bmp, left, 0, w, bmp.height)
 
             val relLeft = left.toFloat() / bmp.width.toFloat()
             val relRight = (right + 1).toFloat() / bmp.width.toFloat()
             val mappedLeft = sourceLeft + (sourceW * relLeft).toInt()
             val mappedRight = sourceLeft + (sourceW * relRight).toInt()
+
             val segRect = android.graphics.Rect(
                 mappedLeft,
                 sourceTop,
-                mappedRight.coerceAtLeast(mappedLeft + 1),
+                Math.max(mappedRight, mappedLeft + 1),
                 sourceTop + sourceH
             )
 
@@ -533,7 +546,6 @@ class NavigationNotificationListener : NotificationListenerService() {
             )
         }
 
-        DebugLog.d(TAG, "Split composite lanes: ${bmp.width}x${bmp.height} -> ${out.size} segments")
         return out
     }
 
@@ -545,37 +557,15 @@ class NavigationNotificationListener : NotificationListenerService() {
         if (scored.isEmpty()) return null
 
         val preliminary = scored.sortedBy { it.first.bounds.exactCenterX() }
-        DebugLog.i(TAG, "Lane detect: scored=${scored.size}, preliminary=${preliminary.size}")
         if (preliminary.isEmpty()) return null
 
-        val medianY = preliminary
-            .map { it.first.bounds.exactCenterY() }
-            .sorted()
-            .let { it[it.size / 2] }
-
-        val medianH = preliminary
-            .map { it.first.bounds.height().coerceAtLeast(1) }
-            .sorted()
-            .let { it[it.size / 2] }
-            .toFloat()
-
-        val yTolerance = maxOf(14f, medianH * 0.55f)
+        val medianY = preliminary.map { it.first.bounds.exactCenterY() }.sorted().let { it[it.size / 2] }
+        val medianH = preliminary.map { Math.max(it.first.bounds.height(), 1) }.sorted().let { it[it.size / 2] }.toFloat()
+        val yTolerance = Math.max(14f, medianH * 0.55f)
 
         val rowCandidates = preliminary
             .filter { abs(it.first.bounds.exactCenterY() - medianY) <= yTolerance }
             .ifEmpty { preliminary }
-
-        DebugLog.i(TAG, "Lane detect: rowCandidates=${rowCandidates.size}, medianY=$medianY, yTolerance=$yTolerance")
-
-        rowCandidates.forEachIndexed { index, (candidate, metrics) ->
-            DebugLog.i(
-                TAG,
-                "Row[$index]: bounds=${candidate.bounds}, centerX=${candidate.bounds.exactCenterX()}, " +
-                    "centerY=${candidate.bounds.exactCenterY()}, width=${candidate.bounds.width()}, " +
-                    "white=${"%.3f".format(metrics.whiteRatio)}, fg=${"%.3f".format(metrics.foregroundRatio)}, " +
-                    "comp=${"%.3f".format(metrics.componentDominance)}, score=${"%.3f".format(metrics.totalScore)}"
-            )
-        }
 
         val orderedForDedup = rowCandidates.sortedBy { it.first.bounds.exactCenterX() }
 
@@ -586,7 +576,6 @@ class NavigationNotificationListener : NotificationListenerService() {
 
             if (i + 1 < orderedForDedup.size) {
                 val next = orderedForDedup[i + 1]
-
                 val currentX = current.first.bounds.exactCenterX()
                 val nextX = next.first.bounds.exactCenterX()
                 val distanceX = abs(nextX - currentX)
@@ -594,8 +583,6 @@ class NavigationNotificationListener : NotificationListenerService() {
                 if (distanceX <= 120f) {
                     val chosen = if (current.second.totalScore >= next.second.totalScore) current else next
                     deduped.add(chosen)
-
-                    DebugLog.i(TAG, "Lane dedup pair: i=$i, distanceX=$distanceX -> merged")
                     i += 2
                     continue
                 }
@@ -605,140 +592,49 @@ class NavigationNotificationListener : NotificationListenerService() {
             i += 1
         }
 
-        DebugLog.i(TAG, "Lane detect: deduped=${deduped.size}")
         if (deduped.isEmpty()) return null
 
-        val ordered = deduped.sortedBy { it.first.bounds.exactCenterX() }
-        if (ordered.isEmpty()) return null
+        val logicalLanes = deduped.sortedBy { it.first.bounds.exactCenterX() }
+        if (logicalLanes.isEmpty()) return null
 
-        val capped = if (ordered.size <= 6) {
-            ordered
-        } else {
-            ordered
-                .sortedByDescending { it.second.totalScore }
-                .take(6)
-                .sortedBy { it.first.bounds.exactCenterX() }
-        }
-
-        val slotted = Array<Pair<ArrowCandidate, ArrowMetrics>?>(6) { null }
-        val laneCount = capped.size.coerceAtMost(6)
-        val startSlot = ((6 - laneCount) / 2).coerceAtLeast(0)
-
-        for (slotIndex in 0 until laneCount) {
-            slotted[startSlot + slotIndex] = capped[slotIndex]
-        }
-
-        DebugLog.i(TAG, "Lane slotting: ordered=${ordered.size}, capped=${capped.size}, startSlot=$startSlot")
-        capped.forEachIndexed { idx, entry ->
-            DebugLog.i(
-                TAG,
-                "Lane ordered[$idx]: bounds=${entry.first.bounds}, centerX=${entry.first.bounds.exactCenterX()}, score=${"%.3f".format(entry.second.totalScore)}"
+        val lanes = logicalLanes.map { (candidate, metrics) ->
+            LogicalLane(
+                candidate = candidate,
+                metrics = metrics,
+                whitenessScore = metrics.whiteRatio + metrics.componentDominance * 0.35
             )
         }
 
-        for (slotIndex in slotted.indices) {
-            val entry = slotted[slotIndex]
-            if (entry == null) {
-                DebugLog.d(TAG, "Lane slot[$slotIndex]: empty")
-            } else {
-                val b = entry.first.bounds
-                val m = entry.second
-                DebugLog.d(
-                    TAG,
-                    "Lane slot[$slotIndex]: bounds=$b, white=${"%.3f".format(m.whiteRatio)}, " +
-                        "fg=${"%.3f".format(m.foregroundRatio)}, comp=${"%.3f".format(m.componentDominance)}, " +
-                        "score=${"%.3f".format(m.totalScore)}"
-                )
-            }
-        }
+        val sortedByWhiteness = lanes.sortedByDescending { it.whitenessScore }
+        val bestScore = sortedByWhiteness.first().whitenessScore
+        val activeThreshold = bestScore * 0.82
 
-        val maskChars = CharArray(6) { ' ' }
+        val laneValues = mutableListOf<Char>()
         var whiteCount = 0
         var grayCount = 0
-        val slotMetrics = mutableListOf<Pair<Int, ArrowMetrics>>()
 
-        for (slotIndex in slotted.indices) {
-            val entry = slotted[slotIndex] ?: continue
-            val metrics = entry.second
-            slotMetrics.add(slotIndex to metrics)
-        }
-
-        if (slotMetrics.isNotEmpty()) {
-            val sortedByWhiteness = slotMetrics.sortedByDescending { (_, metrics) ->
-                metrics.whiteRatio + (metrics.componentDominance * 0.35)
-            }
-
-            val bestScore = sortedByWhiteness.first().second.whiteRatio +
-                (sortedByWhiteness.first().second.componentDominance * 0.35)
-
-            val activeThreshold = bestScore * 0.82
-
-            for ((slotIndex, metrics) in slotMetrics) {
-                val whitenessScore = metrics.whiteRatio + (metrics.componentDominance * 0.35)
-                val isActive = whitenessScore >= activeThreshold
-
-                if (isActive) {
-                    maskChars[slotIndex] = '1'
-                    whiteCount++
-                } else {
-                    maskChars[slotIndex] = '0'
-                    grayCount++
-                }
-
-                DebugLog.d(
-                    TAG,
-                    "Lane classify: slot=$slotIndex, white=${"%.3f".format(metrics.whiteRatio)}, " +
-                        "comp=${"%.3f".format(metrics.componentDominance)}, " +
-                        "score=${"%.3f".format(whitenessScore)}, activeThreshold=${"%.3f".format(activeThreshold)}, " +
-                        "isActive=$isActive"
-                )
-            }
+        for (lane in lanes) {
+            val isActive = lane.whitenessScore >= activeThreshold
+            val value = if (isActive) '1' else '0'
+            laneValues += value
+            if (isActive) whiteCount++ else grayCount++
         }
 
         if (whiteCount > 2) {
-            val ranked = slotMetrics
-                .map { (slotIndex, metrics) ->
-                    slotIndex to (metrics.whiteRatio + metrics.componentDominance * 0.35)
-                }
-                .sortedByDescending { it.second }
-
-            val keepActive = ranked.take(2).map { it.first }.toSet()
-
+            val keepActive = sortedByWhiteness.take(2).map { it.candidate.ordinal }.toSet()
+            laneValues.clear()
             whiteCount = 0
             grayCount = 0
 
-            for ((slotIndex, _) in slotMetrics) {
-                if (slotIndex in keepActive) {
-                    maskChars[slotIndex] = '1'
-                    whiteCount++
-                } else {
-                    maskChars[slotIndex] = '0'
-                    grayCount++
-                }
+            for (lane in lanes) {
+                val isActive = lane.candidate.ordinal in keepActive
+                val value = if (isActive) '1' else '0'
+                laneValues += value
+                if (isActive) whiteCount++ else grayCount++
             }
-
-            DebugLog.i(TAG, "Lane classify: reduced active lanes to top-2")
         }
 
-        if (whiteCount == 0 && grayCount == 0) return null
-        val normalized = String(maskChars)
-
-        val whiteLeftMost = normalized.indexOf('1')
-        val whiteRightMost = normalized.lastIndexOf('1')
-        val whiteSide = when {
-            whiteCount <= 0 -> "none"
-            whiteLeftMost < 0 || whiteRightMost < 0 -> "none"
-            whiteRightMost <= 2 -> "left"
-            whiteLeftMost >= 3 -> "right"
-            else -> "mixed"
-        }
-
-        val slottedCount = slotted.count { it != null }
-
-        DebugLog.i(
-            TAG,
-            "Lane detect: mask='$normalized', raw=${scored.size}, row=${rowCandidates.size}, slotted=$slottedCount, white=$whiteCount, gray=$grayCount, whiteLeft=$whiteLeftMost, whiteRight=$whiteRightMost, side=$whiteSide"
-        )
+        val normalized = placeLaneValuesIntoMask(laneValues)
 
         return LaneDetectionResult(
             sourceCandidates = sourceCandidates,
@@ -746,22 +642,40 @@ class NavigationNotificationListener : NotificationListenerService() {
             mask = normalized,
             rawCandidates = scored.size,
             rowCandidates = rowCandidates.size,
-            slottedCandidates = slottedCount,
+            slottedCandidates = min(laneValues.size, 6),
             whiteCount = whiteCount,
             grayCount = grayCount,
-            whiteSide = whiteSide
+            whiteSide = when {
+                whiteCount <= 0 -> "none"
+                normalized.lastIndexOf('1') <= 2 -> "left"
+                normalized.indexOf('1') >= 3 -> "right"
+                else -> "mixed"
+            }
         )
     }
 
-    private fun isLaneExclusionEnabled(): Boolean {
-        val prefs = getSharedPreferences(PREFS_NAME, MODE_PRIVATE)
-        return prefs.getBoolean(KEY_LANE_EXCLUSION, true)
+    private fun placeLaneValuesIntoMask(laneValues: List<Char>): String {
+        val mask = CharArray(6) { ' ' }
+        val n = laneValues.size.coerceIn(0, 6)
+        if (n == 0) return String(mask)
+
+        val start = when (n) {
+            1 -> 2
+            2 -> 2
+            3 -> 1
+            4 -> 1
+            5 -> 0
+            else -> 0
+        }
+
+        for (i in 0 until n) {
+            mask[start + i] = if (laneValues[i] == '1') '1' else '0'
+        }
+
+        return String(mask)
     }
 
     private fun clearRecognizedArrowsDebug() {
-        HudService.navDebug.recognizedArrowBitmaps.forEach { bmp ->
-            if (!bmp.isRecycled) bmp.recycle()
-        }
         HudService.navDebug.recognizedArrowBitmaps.clear()
         HudService.navDebug.maneuverArrowOrdinal = null
     }
@@ -798,17 +712,7 @@ class NavigationNotificationListener : NotificationListenerService() {
                             aspectRatio in 0.35f..5.5f ||
                                 (width >= 120 && aspectRatio >= 2.0f)
 
-                        val arrowLike = if (acceptable) {
-                            runCatching { isArrowLikeFast(bitmap) }
-                                .onFailure { err ->
-                                    DebugLog.e(TAG, "Arrow-shape filter failed: ${err.message}")
-                                }
-                                .getOrDefault(true) // fail-open to avoid dropping all arrows/crashing flow
-                        } else {
-                            false
-                        }
-
-                        if (arrowLike) {
+                        if (acceptable) {
                             val rect = android.graphics.Rect()
                             val hasRect = view.getGlobalVisibleRect(rect)
 
@@ -820,15 +724,10 @@ class NavigationNotificationListener : NotificationListenerService() {
                                 android.graphics.Rect(
                                     syntheticLeft,
                                     0,
-                                    syntheticLeft + width.coerceAtLeast(1),
-                                    height.coerceAtLeast(1)
+                                    syntheticLeft + Math.max(width, 1),
+                                    Math.max(height, 1)
                                 )
                             }
-
-                            DebugLog.d(
-                                TAG,
-                                "Candidate bounds resolved: bmp=${width}x${height}, bounds=$bounds, globalRectValid=$useRealBounds"
-                            )
 
                             out.add(
                                 ArrowCandidate(
@@ -839,10 +738,6 @@ class NavigationNotificationListener : NotificationListenerService() {
                                 )
                             )
                         } else {
-                            DebugLog.d(
-                                TAG,
-                                "Candidate rejected by arrow-shape filter: bmp=${width}x${height}, aspect=${"%.2f".format(aspectRatio)}"
-                            )
                             if (!bitmap.isRecycled) bitmap.recycle()
                         }
                     } else {
@@ -859,88 +754,28 @@ class NavigationNotificationListener : NotificationListenerService() {
         }
     }
 
-    private fun isArrowLikeFast(bitmap: android.graphics.Bitmap): Boolean {
-        val maxSide = maxOf(bitmap.width, bitmap.height).coerceAtLeast(1)
-        val adaptiveStep = (maxSide / 160).coerceAtLeast(1)
-        val step = if (bitmap.width * bitmap.height > 160_000) maxOf(2, adaptiveStep) else adaptiveStep
-        val h = (bitmap.height + step - 1) / step
-        val w = (bitmap.width + step - 1) / step
-        if (w <= 2 || h <= 2) return false
-
-        val mask = Array(h) { BooleanArray(w) }
-        var fg = 0
-        var minX = w
-        var minY = h
-        var maxX = -1
-        var maxY = -1
-
-        var yi = 0
-        var y = 0
-        while (y < bitmap.height) {
-            var xi = 0
-            var x = 0
-            while (x < bitmap.width) {
-                val p = bitmap.getPixel(x, y)
-                if (isArrowForegroundPixel(p, alphaThreshold = 35)) {
-                    mask[yi][xi] = true
-                    fg++
-                    if (xi < minX) minX = xi
-                    if (yi < minY) minY = yi
-                    if (xi > maxX) maxX = xi
-                    if (yi > maxY) maxY = yi
-                }
-                xi++
-                x += step
-            }
-            yi++
-            y += step
-        }
-
-        if (fg < 10 || maxX < 0 || maxY < 0) return false
-
-        val bbW = (maxX - minX + 1).coerceAtLeast(1)
-        val bbH = (maxY - minY + 1).coerceAtLeast(1)
-        val bbArea = bbW * bbH
-        if (bbArea <= 0) return false
-
-        val aspect = bbW.toDouble() / bbH.toDouble()
-        if (aspect !in 0.35..4.8) return false
-
-        val occupancy = fg.toDouble() / bbArea.toDouble()
-        if (occupancy !in 0.03..0.85) return false
-
-        var endPoints = 0
-        for (yy in minY..maxY) {
-            for (xx in minX..maxX) {
-                if (!mask[yy][xx]) continue
-                var neighbors = 0
-                for (dy in -1..1) {
-                    for (dx in -1..1) {
-                        if (dx == 0 && dy == 0) continue
-                        val nx = xx + dx
-                        val ny = yy + dy
-                        if (nx < minX || ny < minY || nx > maxX || ny > maxY) continue
-                        if (mask[ny][nx]) neighbors++
-                    }
-                }
-                if (neighbors in 1..2) endPoints++
-            }
-        }
-
-        return endPoints in 0..160
-    }
-
     private fun calculateArrowMetrics(candidate: ArrowCandidate, packageName: String): ArrowMetrics {
         val bitmap = candidate.bitmap
-        val (minV, maxS) = when {
-            packageName.startsWith("ru.yandex") -> 0.78f to 0.26f
-            packageName.contains("google") -> 0.82f to 0.20f
-            else -> 0.80f to 0.22f
+
+        val minV: Float
+        val maxS: Float
+        when {
+            packageName.startsWith("ru.yandex") -> {
+                minV = 0.78f
+                maxS = 0.26f
+            }
+            packageName.contains("google") -> {
+                minV = 0.82f
+                maxS = 0.20f
+            }
+            else -> {
+                minV = 0.80f
+                maxS = 0.22f
+            }
         }
 
         val step = if (bitmap.width * bitmap.height > 120_000) 2 else 1
         val whiteMask = Array((bitmap.height + step - 1) / step) { BooleanArray((bitmap.width + step - 1) / step) }
-        val foregroundMask = Array((bitmap.height + step - 1) / step) { BooleanArray((bitmap.width + step - 1) / step) }
 
         var whitePixels = 0
         var opaquePixels = 0
@@ -956,8 +791,10 @@ class NavigationNotificationListener : NotificationListenerService() {
                 val a = (p ushr 24) and 0xff
                 if (a > 30) {
                     opaquePixels++
-                    if (isArrowForegroundPixel(p, alphaThreshold = 30)) {
-                        foregroundMask[yi][xi] = true
+                    val r = (p shr 16) and 0xff
+                    val g = (p shr 8) and 0xff
+                    val b = p and 0xff
+                    if (r + g + b >= 120) {
                         foregroundPixels++
                     }
                     if (isWhitePixelHsv(p, minV, maxS)) {
@@ -974,20 +811,19 @@ class NavigationNotificationListener : NotificationListenerService() {
 
         val whiteRatio = if (opaquePixels == 0) 0.0 else whitePixels.toDouble() / opaquePixels.toDouble()
         val foregroundRatio = if (opaquePixels == 0) 0.0 else foregroundPixels.toDouble() / opaquePixels.toDouble()
-        val componentDominance = calculateLargestComponentDominance(foregroundMask, foregroundPixels)
+        val componentDominance = calculateLargestComponentDominance(whiteMask, whitePixels)
 
-        val minSide = minOf(bitmap.width, bitmap.height).toDouble()
+        val minSide = Math.min(bitmap.width, bitmap.height).toDouble()
         val sizeScore = (minSide / 220.0).coerceIn(0.0, 1.0)
         val aspectRatio = bitmap.width.toDouble() / bitmap.height.toDouble()
         val aspectPenalty = kotlin.math.abs(aspectRatio - 1.0).coerceAtMost(1.0)
-
         val positionScore = calculatePositionScore(candidate.bounds, packageName)
 
         val totalScore =
-            (whiteRatio * 0.35) +
-                (componentDominance * 0.35) +
+            (whiteRatio * 0.55) +
+                (componentDominance * 0.25) +
                 (positionScore * 0.20) +
-                (foregroundRatio * 0.20) +
+                (foregroundRatio * 0.10) +
                 (sizeScore * 0.12) -
                 (aspectPenalty * 0.12)
 
@@ -1005,19 +841,7 @@ class NavigationNotificationListener : NotificationListenerService() {
     private fun isWhitePixelHsv(pixel: Int, minV: Float, maxS: Float): Boolean {
         val hsv = FloatArray(3)
         android.graphics.Color.colorToHSV(pixel, hsv)
-        val value = hsv[2]
-        val saturation = hsv[1]
-        return value >= minV && saturation <= maxS
-    }
-
-    private fun isArrowForegroundPixel(pixel: Int, alphaThreshold: Int): Boolean {
-        val a = (pixel ushr 24) and 0xff
-        if (a <= alphaThreshold) return false
-        val r = (pixel shr 16) and 0xff
-        val g = (pixel shr 8) and 0xff
-        val b = pixel and 0xff
-        val luma = (r * 299 + g * 587 + b * 114) / 1000
-        return luma >= 35
+        return hsv[2] >= minV && hsv[1] <= maxS
     }
 
     private fun calculateLargestComponentDominance(mask: Array<BooleanArray>, whitePixels: Int): Double {
@@ -1029,7 +853,6 @@ class NavigationNotificationListener : NotificationListenerService() {
 
         val visited = Array(h) { BooleanArray(w) }
         var largest = 0
-
         val qx = IntArray(h * w)
         val qy = IntArray(h * w)
 
@@ -1077,7 +900,6 @@ class NavigationNotificationListener : NotificationListenerService() {
 
     private fun calculatePositionScore(bounds: android.graphics.Rect, packageName: String): Double {
         if (bounds.width() <= 0 || bounds.height() <= 0) return 0.5
-
         val centerY = bounds.exactCenterY()
         val height = bounds.bottom.toFloat().coerceAtLeast(1f)
         val yRatio = (centerY / height).coerceIn(0f, 1f)
@@ -1092,25 +914,9 @@ class NavigationNotificationListener : NotificationListenerService() {
         return (1.0 - (distance * 2.0)).coerceIn(0.0, 1.0)
     }
 
-    private fun saveCandidateDebugBitmap(bitmap: android.graphics.Bitmap, rank: Int, score: Double) {
-        try {
-            val dir = java.io.File(getExternalFilesDir(null), "debug_arrow_candidates")
-            if (!dir.exists()) dir.mkdirs()
-
-            val timestamp = java.text.SimpleDateFormat("yyyyMMdd_HHmmss_SSS", java.util.Locale.US)
-                .format(java.util.Date())
-            val file = java.io.File(dir, "cand_${timestamp}_r${rank}_s${"%.3f".format(score)}.png")
-            java.io.FileOutputStream(file).use { out ->
-                bitmap.compress(android.graphics.Bitmap.CompressFormat.PNG, 100, out)
-            }
-        } catch (_: Exception) {
-        }
-    }
-
     private fun extractDistance(text: String?): String? {
         if (text == null) return null
         val distanceRegex = """(\d+(?:[.,]\d+)?)\s*(m|м|km|км)""".toRegex(RegexOption.IGNORE_CASE)
-        val match = distanceRegex.find(text)
-        return match?.value
+        return distanceRegex.find(text)?.value
     }
 }
