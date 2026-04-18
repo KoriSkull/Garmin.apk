@@ -796,6 +796,46 @@
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:orientation="vertical"
+            android:background="#FFF8E1"
+            android:padding="12dp"
+            android:layout_marginBottom="16dp">
+
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="4. Иконка камеры 🚨 ShowCameraIcon()"
+                android:textStyle="bold"
+                android:layout_marginBottom="8dp" />
+
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="Формат: 0x04, 0x01"
+                android:textSize="12sp"
+                android:fontFamily="monospace"
+                android:layout_marginBottom="4dp" />
+
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="Включает значок камеры (speedcam). Просто вкл/выкл иконки, без логики."
+                android:textSize="12sp"
+                android:fontFamily="monospace"
+                android:layout_marginBottom="8dp" />
+
+            <Button
+                android:id="@+id/btnSendCameraIcon"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="Send ShowCameraIcon (0x04, 0x01)"
+                android:backgroundTint="#F9A825"
+                android:textColor="#FFFFFF" />
+        </LinearLayout>
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical"
             android:background="#F3E5F5"
             android:padding="12dp"
             android:layout_marginBottom="16dp">
