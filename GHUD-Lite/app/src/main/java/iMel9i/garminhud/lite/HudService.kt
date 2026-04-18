@@ -54,7 +54,15 @@ class HudService : Service(), LocationListener {
             var parsedDistance: String = "",
             var parsedEta: String = "",
             var lastArrowBitmap: android.graphics.Bitmap? = null,
-            var arrowStatus: String = "Waiting..."
+            var recognizedArrowBitmaps: MutableList<android.graphics.Bitmap> = mutableListOf(),
+            var maneuverArrowOrdinal: Int? = null,
+            var arrowStatus: String = "Waiting...",
+            var laneMask: String = "-",
+            var laneCandidates: String = "-",
+            var lanePayload: String = "-",
+            var laneMaskBeforeExclusion: String = "-",
+            var laneMaskAfterExclusion: String = "-",
+            var laneExclusionEnabled: Boolean = true
         )
         
         data class HudDebugData(
@@ -73,7 +81,7 @@ class HudService : Service(), LocationListener {
         val hudDebug = HudDebugData()
     }
     
-    private lateinit var hud: GarminHudLite
+    private lateinit var hud: HudEngine
     private lateinit var locationManager: LocationManager
     private var currentSpeed: Float = 0f
     private val timeFormat = SimpleDateFormat("HH:mm", Locale.getDefault())
@@ -138,7 +146,7 @@ class HudService : Service(), LocationListener {
             }
         }
         
-        hud = GarminHudLite(this)
+        hud = HudEngineFactory.create(this)
         hud.onConnectionStateChanged = { connected, deviceName ->
             if (connected) {
                 updateNotification("Подключено: $deviceName")
@@ -290,6 +298,20 @@ class HudService : Service(), LocationListener {
                  hud.setDirection(0, 0) // Clear
              }
         }
+
+        if (HudState.isNavigating && !HudState.laneAssist.isNullOrBlank()) {
+            val (laneArrowMask, laneOutlineMask) = buildLaneMasksFromString(HudState.laneAssist!!)
+            navDebug.laneMask = HudState.laneAssist!!
+            navDebug.lanePayload = "02 ${laneOutlineMask.toHexByte()} ${laneArrowMask.toHexByte()}"
+            if (laneOutlineMask != 0) {
+                hud.setLanes(laneArrowMask, laneOutlineMask)
+            } else {
+                navDebug.lanePayload += " (skip: outline=00)"
+            }
+        } else {
+            navDebug.laneMask = HudState.laneAssist ?: "-"
+            navDebug.lanePayload = "-"
+        }
         
         // 2. Main Number (Distance)
         val mainType = profile.slots[HudSlot.MAIN_NUMBER]
@@ -340,15 +362,34 @@ class HudService : Service(), LocationListener {
         hudDebug.lastUpdateTime = SimpleDateFormat("HH:mm:ss", Locale.getDefault()).format(Date())
     }
 
+    private fun buildLaneMasksFromString(value: String): Pair<Int, Int> {
+        var normalized = value.filter { it == '0' || it == '1' || it == ' ' }.take(6)
+        while (normalized.length < 6) {
+            normalized = if (normalized.length and 1 == 1) " $normalized" else "$normalized "
+        }
+
+        var outlineMask = 0
+        var arrowMask = 0
+        for (index in normalized.indices) {
+            val ch = normalized[index]
+            val bit = 1 shl (6 - index)
+            if (ch == '0' || ch == '1') outlineMask = outlineMask or bit
+            if (ch == '1') arrowMask = arrowMask or bit
+        }
+        return arrowMask to outlineMask
+    }
+
+    private fun Int.toHexByte(): String = this.and(0xFF).toString(16).uppercase().padStart(2, '0')
+
     private fun updateOsmData(location: Location) {
         val timeFormat = SimpleDateFormat("HH:mm:ss", Locale.getDefault())
         osmDebug.lastLocation = String.format("%.6f, %.6f", location.latitude, location.longitude)
         osmDebug.lastUpdateTime = timeFormat.format(Date())
-        
+
         osmClient.getSpeedLimit(location.latitude, location.longitude) { limit ->
             currentOsmSpeedLimit = limit
             osmDebug.currentSpeedLimit = limit
-            
+
             // Update Universal State
             HudState.speedLimit = limit
             checkSpeeding()
@@ -359,7 +400,7 @@ class HudService : Service(), LocationListener {
             osmDebug.camerasFound = cameras.size
         }
     }
-    
+
     private fun checkSpeeding() {
         val limit = HudState.speedLimit
         val speed = HudState.currentSpeed
