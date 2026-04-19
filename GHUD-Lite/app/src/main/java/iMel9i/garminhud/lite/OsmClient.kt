@@ -24,7 +24,7 @@ class OsmClient {
         """.trimIndent()
 
         val url = "$OVERPASS_URL?data=${URLEncoder.encode(query, "UTF-8")}"
-        
+
         val request = Request.Builder().url(url).build()
 
         client.newCall(request).enqueue(object : okhttp3.Callback {
@@ -39,7 +39,7 @@ class OsmClient {
                         callback(null)
                         return
                     }
-                    
+
                     val json = it.body?.string() ?: return
                     try {
                         val jsonObj = JSONObject(json)
@@ -63,7 +63,7 @@ class OsmClient {
             }
         })
     }
-    
+
     fun getCameras(lat: Double, lon: Double, radius: Int, callback: (List<CameraLocation>) -> Unit) {
         // Query for surveillance nodes or speed cameras
         val query = """
@@ -76,7 +76,7 @@ class OsmClient {
         """.trimIndent()
 
         val url = "$OVERPASS_URL?data=${URLEncoder.encode(query, "UTF-8")}"
-        
+
         val request = Request.Builder().url(url).build()
 
         client.newCall(request).enqueue(object : okhttp3.Callback {
@@ -91,13 +91,13 @@ class OsmClient {
                         callback(emptyList())
                         return
                     }
-                    
+
                     val json = it.body?.string() ?: return
                     try {
                         val jsonObj = JSONObject(json)
                         val elements = jsonObj.getJSONArray("elements")
                         val cameras = mutableListOf<CameraLocation>()
-                        
+
                         for (i in 0 until elements.length()) {
                             val el = elements.getJSONObject(i)
                             val lat = el.getDouble("lat")

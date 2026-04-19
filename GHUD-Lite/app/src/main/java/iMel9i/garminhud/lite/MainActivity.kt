@@ -44,7 +44,7 @@ class MainActivity : AppCompatActivity() {
     private lateinit var switchYandexNotifications: android.widget.Switch
     private lateinit var switchService: android.widget.Switch
     
-    private lateinit var hud: GarminHudLite
+    private lateinit var hud: HudEngine
     private var closeReceiver: android.content.BroadcastReceiver? = null
     
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -69,7 +69,7 @@ class MainActivity : AppCompatActivity() {
         switchYandexNotifications = findViewById(R.id.switchYandexNotifications)
         switchService = findViewById(R.id.switchService)
         
-        hud = GarminHudLite(this)
+        hud = HudEngineFactory.create(this)
         
         // Register broadcast receiver for app close
         closeReceiver = object : android.content.BroadcastReceiver() {
